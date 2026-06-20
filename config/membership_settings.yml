@@ -1,0 +1,37 @@
+membership:
+  guild_id: 1403184187669872650
+
+  roles:
+    reguler:
+      name: "メンバー / Member"
+      role_id: 1517031166279159848
+      duration_days: 30
+      price_rp: 100000
+
+    intensive:
+      name: "集中生 / Intensive Student"
+      role_id: 1517676769954762804
+      duration_days: 30
+      price_rp: 300000
+      # Intensive juga dihitung sebagai 1x payment kumulatif ke lifetime
+      # Intensive tidak punya lifetime sendiri — per-bulan on-demand
+
+    lifetime:
+      name: "ライフタイムメンバー / Lifetime Member"
+      role_id: 1517718386002628608
+      payment_threshold: 12   # Total kumulatif (reguler + intensive mix) sebelum unlock lifetime
+      # Warna role diatur langsung di Discord — tidak perlu di sini
+
+  # Kosong = hanya admin. Tambah role ID moderator nanti kalau perlu
+  moderator_role_ids: []
+
+  # Channel untuk announce membership baru
+  announcement_channel_id: 1403184188148027506  # general (join-log)
+
+  # Warning DM dikirim X hari sebelum expiry
+  grace_period_days: 3
+
+  # Jam cek expiry harian (UTC)
+  expiry_check_time: "03:00"
+
+  timezone: "Asia/Jakarta"
