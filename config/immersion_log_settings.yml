@@ -10,7 +10,7 @@ points_multipliers:
 immersion_bot:
   allowed_log_channels:
     - 1516671526345113671  # immersion-log
-    - 1403191211652681841  # moderator-only (admin bypass)
+    - 1403191211652681841  # staff-chat (admin bypass)
 
 achievements:
   Visual Novel:
