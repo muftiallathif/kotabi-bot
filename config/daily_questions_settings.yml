@@ -1,3 +1,6 @@
-1403184187669872650:  # Kotabi Japanese
+# Keterangan: Angka di bawah ini adalah ID Server Kotabi Japanese Anda
+1403184187669872650:
   channels:
-    - 1403184188148027506  # general
+    # Keterangan: Masukkan daftar ID Channel tempat kuis AI bahasa Jepang akan dikirim otomatis setiap hari.
+    # Contoh di bawah diarahkan ke channel 'today-i-learned' atau sesuaikan ke channel pilihan Anda.
+    - 1403184188148027509  # today-i-learned
