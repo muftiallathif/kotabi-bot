@@ -1,31 +1,39 @@
+# Keterangan: Nama alur kerja otomatisasi (workflow) yang akan muncul di tab GitHub Actions Anda.
 name: Deploy Kotabi Japanese Bot
 
+# Keterangan: Memberikan izin (permission) kepada token GitHub untuk menulis/membuat halaman Release otomatis.
 permissions:
   contents: write
 
+# Keterangan: Pemicu (trigger) kapan alur kerja ini harus berjalan otomatis.
 on:
   push:
     branches:
-      - main
-  workflow_dispatch:
+      - main # Jalan otomatis setiap ada kode baru yang di-push ke branch main.
+  workflow_dispatch: # Mengaktifkan tombol "Run workflow" manual di halaman GitHub Actions.
 
 jobs:
   deploy:
+    # Keterangan: Menentukan bahwa proses ini berjalan langsung di dalam komputer VPS Anda sendiri (self-hosted runner).
     runs-on: self-hosted
 
     steps:
+    # Keterangan: Langkah wajib untuk menyalin seluruh file kode project dari repositori GitHub ke dalam VPS.
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # Keterangan: Menghentikan dan menghapus container Docker versi lama agar tidak bentrok dengan versi baru.
     - name: Stop and remove existing container
       run: |
         docker stop discord-kotabi-bot-container || true
         docker rm discord-kotabi-bot-container || true
 
+    # Keterangan: Membakar (build) seluruh file kode terbaru menjadi sebuah gambar cetakan Docker (Image) baru.
     - name: Build Docker image
       run: |
         docker build -t discord-kotabi-bot .
 
+    # Keterangan: Menyalakan container Docker baru dengan memasukkan database luar (bind mount) dan semua kunci rahasia (env).
     - name: Run Docker container
       run: |
         docker run -d \
@@ -41,10 +49,12 @@ jobs:
           --restart unless-stopped \
           discord-kotabi-bot
 
+    # Keterangan: Menghapus cetakan Docker (Image) lama yang sudah tidak terpakai agar penyimpanan disk VPS tidak penuh.
     - name: Clean up unused Docker images
       run: |
         docker image prune -f
 
+    # Keterangan: Membuat halaman rilis otomatis (GitHub Release) beserta tag versi baru di repositori GitHub Anda.
     - name: Release on GitHub
       uses: "marvinpinto/action-automatic-releases@latest"
       with:
