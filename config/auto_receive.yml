@@ -1,2 +1,5 @@
-1403184187669872650: # Kotabi Japanese
-    1517031166279159848: 1403184187669872650  # メンバー / Member -> Semua Orang (placeholder, sesuaikan jika perlu)
+# Keterangan: Angka di bawah ini adalah ID Server Kotabi Japanese Anda
+1403184187669872650:
+  # Keterangan: Format pengisiannya adalah -> ID_Role_Syarat: ID_Role_Hadiah
+  # Rumus di bawah: Jika member memiliki role 【旅人】 Traveler, maka otomatis diberikan role Semua Orang.
+  1517031166279159848: 1403184187669872650
