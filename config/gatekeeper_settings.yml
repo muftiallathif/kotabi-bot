@@ -1,6 +1,6 @@
 rank_structure:
   1403184187669872650: # Kotabi Japanese
-    - name: "平民 / Commoner"
+    - name: "【平民】Commoner"
       require_role: null
       combination_rank: false
       font: null
@@ -17,7 +17,7 @@ rank_structure:
       no_timeout: true
       emoji: null
 
-    - name: "騎士 / Knight"
+    - name: "【騎士】Knight"
       require_role: null
       combination_rank: false
       font: null
@@ -34,7 +34,7 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    - name: "【N5】准男爵 / Baronet"
+    - name: "【N5・従男爵】Baronet"
       require_role: null
       combination_rank: false
       font: null
@@ -51,8 +51,8 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    - name: "【N5】男爵 / Baron"
-      require_role: [1404219557333303419]  # 【N5】准男爵 / Baronet
+    - name: "【N5・男爵】Baron"
+      require_role: [1404219557333303419]  # 【N5・従男爵】Baronet
       combination_rank: false
       font: null
       font_size: null
@@ -68,7 +68,7 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    - name: "【N4】准子爵 / Junior Viscount"
+    - name: "【N4・従子爵】Junior Viscount"
       require_role: null
       combination_rank: false
       font: null
@@ -85,8 +85,8 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    - name: "【N4】子爵 / Viscount"
-      require_role: [1515998740203180202]  # 【N4】准子爵 / Junior Viscount
+    - name: "【N4・子爵】Viscount"
+      require_role: [1515998740203180202]  # 【N4・従子爵】Junior Viscount
       combination_rank: false
       font: null
       font_size: null
@@ -102,7 +102,7 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    - name: "【N3】准伯爵 / Junior Count"
+    - name: "【N3・従伯爵】Junior Count"
       require_role: null
       combination_rank: false
       font: null
@@ -119,8 +119,8 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    - name: "【N3】伯爵 / Count"
-      require_role: [1515999058915758090]  # 【N3】准伯爵 / Junior Count
+    - name: "【N3・伯爵】Count"
+      require_role: [1515999058915758090]  # 【N3・従伯爵】Junior Count
       combination_rank: false
       font: null
       font_size: null
@@ -136,7 +136,7 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    - name: "【N2】准侯爵 / Junior Marquess"
+    - name: "【N2・従侯爵】Junior Marquess"
       require_role: null
       combination_rank: false
       font: null
@@ -153,8 +153,8 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    - name: "【N2】侯爵 / Marquess"
-      require_role: [1515999289388699779]  # 【N2】准侯爵 / Junior Marquess
+    - name: "【N2・侯爵】Marquess"
+      require_role: [1515999289388699779]  # 【N2・従侯爵】Junior Marquess
       combination_rank: false
       font: null
       font_size: null
@@ -170,7 +170,7 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    - name: "【N1】准公爵 / Junior Duke"
+    - name: "【N1・従公爵】Junior Duke"
       require_role: null
       combination_rank: false
       font: null
@@ -187,8 +187,8 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    - name: "【N1】公爵 / Duke"
-      require_role: [1515999731355222136]  # 【N1】准公爵 / Junior Duke
+    - name: "【N1・公爵】Duke"
+      require_role: [1515999731355222136]  # 【N1・従公爵】Junior Duke
       combination_rank: false
       font: null
       font_size: null
@@ -204,8 +204,9 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    - name: "大公 / Archduke"
-      require_role: [1404219327833444362]  # 【N1】公爵 / Duke
+    # ⭐ FIXED: Changed from "大公 / Archduke"
+    - name: "【選帝侯】Prince Elector"
+      require_role: [1404219327833444362]  # 【N1・公爵】Duke
       combination_rank: false
       font: null
       font_size: 100
@@ -221,8 +222,9 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    - name: "王 / King"
-      require_role: [1516000372441874452]  # 大公 / Archduke
+    # ⭐ FIXED: Changed from "王 / King"
+    - name: "【国王】High King"
+      require_role: [1516000372441874452]  # 【選帝侯】Prince Elector
       combination_rank: false
       font: null
       font_size: 100
@@ -238,8 +240,9 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    - name: "大王 / High King"
-      require_role: [1516000507414577173]  # 王 / King
+    # ⭐ FIXED: Changed from "大王 / High King"
+    - name: "【覇王】Overlord"
+      require_role: [1516000507414577173]  # 【国王】High King
       combination_rank: false
       font: null
       font_size: 100
@@ -255,8 +258,8 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    - name: "皇帝 / Emperor"
-      require_role: [1516000520521650247]  # 大王 / High King
+    - name: "【皇帝】Emperor"
+      require_role: [1516000520521650247]  # 【覇王】Overlord
       combination_rank: false
       font: null
       font_size: 90
