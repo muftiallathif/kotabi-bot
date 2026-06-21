@@ -2,7 +2,7 @@
 
 import re
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from lib.bot import KotabiBot
 
 # --- QUERY DATABASE SQLITE --- #
