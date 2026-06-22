@@ -1,4 +1,4 @@
-"""Cog yang berfungsi mengompresi file database SQLite menjadi format Gzip (.gz) dan mengirimkannya ke channel Discord sebagai cadangan (Backup) — BAGIAN 1."""
+"""Cog yang berfungsi mengompresi file database SQLite menjadi format Gzip (.gz) dan mengirimkannya ke channel Discord sebagai cadangan (Backup) — BAGIAN 1.""" 
 
 import asyncio
 import gzip
