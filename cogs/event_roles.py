@@ -1,4 +1,4 @@
-"""Cog yang berfungsi mengelola peran otomatis berbasis acara terjadwal (Scheduled Event) di Discord — BAGIAN 1."""
+"""Cog yang berfungsi mengelola peran otomatis berbasis acara terjadwal (Scheduled Event) di Discord — BAGIAN 1.""" 
 
 import discord
 from discord.ext import commands, tasks
