@@ -1,4 +1,4 @@
-"""Cog yang otomatis menghasilkan dan mengirimkan pertanyaan harian (Daily Question) berbahasa Jepang menggunakan OpenAI API — BAGIAN 1."""
+"""Cog yang otomatis menghasilkan dan mengirimkan pertanyaan harian (Daily Question) berbahasa Jepang menggunakan OpenAI API — BAGIAN 1.""" 
 
 import os
 import aiohttp
