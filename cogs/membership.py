@@ -1,4 +1,4 @@
-"""
+""" 
 Membership System Cog — Kotabi Japanese (June 2026)
 ===================================================
 
