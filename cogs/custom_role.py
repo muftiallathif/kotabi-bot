@@ -1,4 +1,4 @@
-"""Cog yang memungkinkan pengguna membuat peran khusus (Custom Role) mandiri dengan nama, warna, dan ikon pribadi — BAGIAN 1."""
+"""Cog yang memungkinkan pengguna membuat peran khusus (Custom Role) mandiri dengan nama, warna, dan ikon pribadi — BAGIAN 1.""" 
 
 import re
 import discord
