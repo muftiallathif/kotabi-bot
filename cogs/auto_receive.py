@@ -1,4 +1,4 @@
-"""Cog untuk memberikan role otomatis berdasarkan kepemilikan role lain."""
+"""Cog untuk memberikan role otomatis berdasarkan kepemilikan role lain.""" 
 
 import asyncio
 import logging
