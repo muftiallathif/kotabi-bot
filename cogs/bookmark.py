@@ -1,4 +1,4 @@
-"""Cog penanda pesan (Bookmark) ke DM pengguna via reaksi emoji.""" 
+"""Cog penanda pesan (Bookmark) ke DM pengguna via reaksi emoji."""
 
 import asyncio
 import discord
