@@ -1,5 +1,5 @@
 rank_structure:
-  1403184187669872650: # Kotabi Japanese
+  1403184187669872650: # Kotabi Japanese 
     - name: "【平民】Commoner"
       require_role: null
       combination_rank: false
