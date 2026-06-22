@@ -4,6 +4,8 @@ name: Deploy Kotabi Japanese Bot
 # Keterangan: Memberikan izin (permission) kepada token GitHub untuk menulis/membuat halaman Release otomatis.
 permissions:
   contents: write
+  packages: write
+  pull-requests: write
 
 # Keterangan: Pemicu (trigger) kapan alur kerja ini harus berjalan otomatis.
 on:
