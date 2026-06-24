@@ -1,66 +1,68 @@
-# Keterangan: Nama alur kerja otomatisasi (workflow) yang akan muncul di tab GitHub Actions Anda.
+# ====================================================================
+# ALUR KERJA OTOMATISASI DEPLOYMENT KOTABI BOT (GitHub Actions)
+# ====================================================================
+
 name: Deploy Kotabi Japanese Bot
 
-# Keterangan: Memberikan izin (permission) kepada token GitHub untuk menulis/membuat halaman Release otomatis.
+# Memberikan izin kepada token GitHub untuk membuat rilis otomatis
 permissions:
   contents: write
-  packages: write
-  pull-requests: read
 
-# Keterangan: Pemicu (trigger) kapan alur kerja ini harus berjalan otomatis.
+# Pemicu jalannya otomatisasi
 on:
   push:
     branches:
-      - main # Jalan otomatis setiap ada kode baru yang di-push ke branch main.
-  workflow_dispatch: # Mengaktifkan tombol "Run workflow" manual di halaman GitHub Actions.
+      - main              # Jalan otomatis jika ada update di branch main
+  workflow_dispatch:      # Mengaktifkan tombol jalankan manual di web GitHub
 
 jobs:
   deploy:
-    # Keterangan: Menentukan bahwa proses ini berjalan langsung di dalam komputer VPS Anda sendiri (self-hosted runner).
-    runs-on: self-hosted
+    runs-on: self-hosted  # Berjalan langsung di VPS Anda (self-hosted runner)
 
     steps:
-    # Keterangan: Langkah wajib untuk menyalin seluruh file kode project dari repositori GitHub ke dalam VPS.
-    - name: Checkout code
-      uses: actions/checkout@v4
+      # 1. Menyalin berkas kode terbaru dari repositori GitHub ke VPS
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    # Keterangan: Menghentikan dan menghapus container Docker versi lama agar tidak bentrok dengan versi baru.
-    - name: Stop and remove existing container
-      run: |
-        docker stop discord-kotabi-bot-container || true
-        docker rm discord-kotabi-bot-container || true
+      # 2. Menghentikan container lama agar tidak bentrok dengan yang baru
+      - name: Stop and remove existing container
+        run: |
+          docker stop discord-kotabi-bot-container || true
+          docker rm discord-kotabi-bot-container || true
 
-    # Keterangan: Membakar (build) seluruh file kode terbaru menjadi sebuah gambar cetakan Docker (Image) baru.
-    - name: Build Docker image
-      run: |
-        docker build -t discord-kotabi-bot .
+      # 3. Merakit ulang Docker Image dengan versi kode terbaru
+      - name: Build Docker image
+        run: |
+          docker build -t discord-kotabi-bot .
 
-    # Keterangan: Menyalakan container Docker baru dengan memasukkan database luar (bind mount) dan semua kunci rahasia (env).
-    - name: Run Docker container
-      run: |
-        docker run -d \
-          --name discord-kotabi-bot-container \
-          --mount type=bind,source=/usr/src/kotabi_bot/data,target=/app/data \
-          --env TOKEN=${{ secrets.TOKEN }} \
-          --env COMMAND_PREFIX=${{ vars.COMMAND_PREFIX }} \
-          --env PATH_TO_DB=${{ vars.PATH_TO_DB }} \
-          --env AUTHORIZED_USERS=${{ vars.AUTHORIZED_USERS }} \
-          --env DEBUG_USER=${{ vars.DEBUG_USER }} \
-          --env TMDB_API_KEY=${{ secrets.TMDB_API_KEY }} \
-          --env OPENAI_KEY=${{ secrets.OPENAI_KEY }} \
-          --restart unless-stopped \
-          discord-kotabi-bot
+      # 4. Menyalakan Container Docker Baru
+      # Di sini database lokal Anda di VPS (/usr/src/kotabi_bot/data) akan diikat (bind mount)
+      # ke dalam container agar data riwayat belajar user tidak terhapus saat dideploy ulang.
+      - name: Run Docker container
+        run: |
+          docker run -d \
+            --name discord-kotabi-bot-container \
+            --mount type=bind,source=/usr/src/kotabi_bot/data,target=/app/data \
+            --env TOKEN=${{ secrets.TOKEN }} \
+            --env COMMAND_PREFIX=${{ vars.COMMAND_PREFIX }} \
+            --env PATH_TO_DB=${{ vars.PATH_TO_DB }} \
+            --env AUTHORIZED_USERS=${{ vars.AUTHORIZED_USERS }} \
+            --env DEBUG_USER=${{ vars.DEBUG_USER }} \
+            --env TMDB_API_KEY=${{ secrets.TMDB_API_KEY }} \
+            --env OPENAI_KEY=${{ secrets.OPENAI_KEY }} \
+            --restart unless-stopped \
+            discord-kotabi-bot
 
-    # Keterangan: Menghapus cetakan Docker (Image) lama yang sudah tidak terpakai agar penyimpanan disk VPS tidak penuh.
-    - name: Clean up unused Docker images
-      run: |
-        docker image prune -f
+      # 5. Membersihkan sampah cetakan gambar Docker lama agar memori VPS hemat
+      - name: Clean up unused Docker images
+        run: |
+          docker image prune -f
 
-    # Keterangan: Membuat halaman rilis otomatis (GitHub Release) beserta tag versi baru di repositori GitHub Anda.
-    - name: Release on GitHub
-      uses: "marvinpinto/action-automatic-releases@latest"
-      with:
-        repo_token: "${{ secrets.GITHUB_TOKEN }}"
-        prerelease: false
-        automatic_release_tag: "latest"
-        title: "Release v1.0.${{ github.run_number }}"
+      # 6. Membuat halaman Release otomatis di halaman GitHub Anda
+      - name: Release on GitHub
+        uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          prerelease: false
+          automatic_release_tag: "latest"
+          title: "Release v1.0.${{ github.run_number }}"

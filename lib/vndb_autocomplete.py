@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 from discord.ext import tasks
 
-from lib.bot import KotabiBot
+from core.bot import KotabiBot
 
 CACHED_VNDB_RESULTS_CREATE_TABLE_QUERY = """
 CREATE TABLE IF NOT EXISTS cached_vndb_results (

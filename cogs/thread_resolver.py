@@ -1,23 +1,20 @@
-from lib.bot import KotabiBot
+from core.bot import KotabiBot
 import discord
 import os
 import yaml
 import asyncio
 from datetime import timedelta
-from discord.ext import commands
-from discord.ext import tasks
+from discord.ext import commands, tasks
 
 THREAD_RESOLVER_SETTINGS_PATH = os.getenv("ALT_THREAD_RESOLVER_SETTINGS") or "config/thread_resolver_settings.yml"
 with open(THREAD_RESOLVER_SETTINGS_PATH, "r", encoding="utf-8") as f:
     thread_resolver_settings = yaml.safe_load(f)
-
 
 async def _get_channel(bot: KotabiBot, channel_id: int) -> discord.TextChannel:
     channel = bot.get_channel(channel_id)
     if not channel:
         channel = await bot.fetch_channel(channel_id)
     return channel
-
 
 async def _get_message(bot: KotabiBot, channel_id: int, message_id: int) -> discord.Message:
     if not message_id:
@@ -31,7 +28,6 @@ async def _get_message(bot: KotabiBot, channel_id: int, message_id: int) -> disc
             return None
     return message
 
-
 class Resolver(commands.Cog):
     def __init__(self, bot: KotabiBot):
         self.bot = bot
@@ -43,19 +39,21 @@ class Resolver(commands.Cog):
         guild = self.bot.get_guild(guild_id)
         return [channel for channel in guild.forums if channel.id in thread_resolver_settings[guild_id]]
 
-    @discord.app_commands.command(name="solved", description="Marks a thread as solved.")
+    @discord.app_commands.command(name="solved", description="Menandai thread bantuan sebagai sudah selesai (solved).")
     async def solved(self, interaction: discord.Interaction):
         if interaction.guild_id not in thread_resolver_settings:
-            return await interaction.response.send_message("This server does not have any help channels set up.", ephemeral=True)
+            return await interaction.response.send_message("Server ini tidak memiliki saluran bantuan yang terkonfigurasi.", ephemeral=True)
         if not isinstance(interaction.channel, discord.Thread):
-            return await interaction.response.send_message("This command can only be used in a help thread.", ephemeral=True)
+            return await interaction.response.send_message("Perintah ini hanya dapat digunakan di dalam thread bantuan.", ephemeral=True)
+        
         question_forums = await self.get_guild_help_forums(interaction.guild_id)
         if interaction.channel.parent not in question_forums:
-            return await interaction.response.send_message("This channel is not a help channel.", ephemeral=True)
-        if not "[SOLVED]" in interaction.channel.name or interaction.channel.archived:
-            await interaction.response.send_message(f'{interaction.user.mention} closed the thread.')
+            return await interaction.response.send_message("Saluran ini bukan merupakan saluran bantuan.", ephemeral=True)
+        
+        if not "[TERSELESAIKAN]" in interaction.channel.name or interaction.channel.archived:
+            await interaction.response.send_message(f'{interaction.user.mention} menutup thread ini.')
         else:
-            await interaction.response.send_message("This thread is already marked as solved.", ephemeral=True)
+            await interaction.response.send_message("Thread ini sudah ditandai sebagai terselesaikan.", ephemeral=True)
         await self.mark_thread_as_solved(interaction.channel)
 
     @commands.Cog.listener()
@@ -68,15 +66,13 @@ class Resolver(commands.Cog):
             await asyncio.sleep(3)
         if not thread.owner:
             return
-        await thread.send(f'{thread.owner.mention} Please use the `/solved` command once your problem has been solved.')
+        await thread.send(f'{thread.owner.mention} Harap gunakan perintah `/solved` jika masalah Anda sudah terselesaikan.')
 
     async def mark_thread_as_solved(self, thread: discord.Thread):
-        new_thread_name = "[SOLVED] " + thread.name if not "[SOLVED]" in thread.name else thread.name
-
+        new_thread_name = "[TERSELESAIKAN] " + thread.name if not "[TERSELESAIKAN]" in thread.name else thread.name
         if len(new_thread_name) > 100:
             new_thread_name = new_thread_name[:97] + "..."
-
-        await thread.edit(reason=f'Marked as solved.', name=new_thread_name, archived=True)
+        await thread.edit(reason='Ditandai sebagai terselesaikan.', name=new_thread_name, archived=True)
 
     async def ask_if_solved_for_guild(self, guild: discord.Guild):
         question_forums = await self.get_guild_help_forums(guild.id)
@@ -84,16 +80,13 @@ class Resolver(commands.Cog):
             return
         for question_forum in question_forums:
             for thread in question_forum.threads:
-
-                if "[SOLVED]" in thread.name and not thread.archived:
+                if "[TERSELESAIKAN]" in thread.name and not thread.archived:
                     await self.mark_thread_as_solved(thread)
                     continue
-
-                elif thread.archived and "[SOLVED]" not in thread.name:
+                elif thread.archived and "[TERSELESAIKAN]" not in thread.name:
                     await self.mark_thread_as_solved(thread)
                     continue
-
-                elif thread.archived and "[SOLVED]" in thread.name:
+                elif thread.archived and "[TERSELESAIKAN]" in thread.name:
                     continue
 
                 last_message = await _get_message(self.bot, thread.id, thread.last_message_id)
@@ -108,7 +101,7 @@ class Resolver(commands.Cog):
                     await self.mark_thread_as_solved(thread)
                     continue
                 if discord.utils.utcnow() - last_message.created_at > timedelta(hours=48):
-                    await thread.send(f'{thread.owner.mention} has your problem been solved? If so, do  ``/solved`` to close this thread.')
+                    await thread.send(f'{thread.owner.mention} apakah masalah Anda sudah terselesaikan? Jika ya, silakan gunakan perintah `/solved` untuk menutup thread ini.')
                     continue
 
     @tasks.loop(hours=1)
@@ -118,7 +111,6 @@ class Resolver(commands.Cog):
                 continue
             else:
                 await self.ask_if_solved_for_guild(guild)
-
 
 async def setup(bot):
     await bot.add_cog(Resolver(bot))

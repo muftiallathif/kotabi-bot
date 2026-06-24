@@ -3,7 +3,7 @@ import asyncio
 import argparse
 import discord
 from dotenv import load_dotenv
-from lib.bot import KotabiBot
+from core.bot import KotabiBot
 
 load_dotenv()
 

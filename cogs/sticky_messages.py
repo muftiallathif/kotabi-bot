@@ -1,4 +1,4 @@
-from lib.bot import KotabiBot
+from core.bot import KotabiBot
 import discord
 from discord.ext import commands
 import asyncio
@@ -29,7 +29,6 @@ WHERE guild_id = ? AND channel_id = ?;"""
 
 FETCH_LOCK = asyncio.Lock()
 
-
 class StickyMessages(commands.Cog):
     def __init__(self, bot: KotabiBot):
         self.bot = bot
@@ -46,7 +45,7 @@ class StickyMessages(commands.Cog):
             message = await channel.fetch_message(message_id)
         return message
 
-    @discord.app_commands.command(name="sticky_last_message", description="Make the last message sticky in this channel")
+    @discord.app_commands.command(name="sticky_last_message", description="Jadikan pesan terakhir sebagai pesan tetap (sticky) di channel ini.")
     @discord.app_commands.guild_only()
     @discord.app_commands.default_permissions(manage_messages=True)
     async def sticky_last_message(self, interaction: discord.Interaction):
@@ -60,7 +59,7 @@ class StickyMessages(commands.Cog):
             break
 
         sticky_message = await interaction.channel.send(
-            f"📌 **Sticky Message:**\n\n{last_message.content}",
+            f"📌 **Pesan Tetap:**\n\n{last_message.content}",
             embed=last_message.embeds[0] if last_message.embeds else None,
             files=[await attachment.to_file() for attachment in last_message.attachments]
         )
@@ -71,9 +70,9 @@ class StickyMessages(commands.Cog):
                             last_message.id,
                             sticky_message.id))
 
-        await interaction.followup.send("Message has been made sticky!", ephemeral=True)
+        await interaction.followup.send("Pesan telah berhasil dijadikan pesan tetap!", ephemeral=True)
 
-    @discord.app_commands.command(name="unsticky", description="Remove the sticky message from this channel")
+    @discord.app_commands.command(name="unsticky", description="Hapus pesan tetap dari channel ini.")
     @discord.app_commands.guild_only()
     @discord.app_commands.default_permissions(manage_messages=True)
     async def unsticky(self, interaction: discord.Interaction):
@@ -84,7 +83,7 @@ class StickyMessages(commands.Cog):
                                               interaction.channel_id))
 
         if not sticky_data:
-            await interaction.followup.send("No sticky message found in this channel!", ephemeral=True)
+            await interaction.followup.send("Tidak ditemukan pesan tetap di channel ini!", ephemeral=True)
             return
 
         try:
@@ -98,7 +97,7 @@ class StickyMessages(commands.Cog):
                            (interaction.guild_id,
                             interaction.channel_id))
 
-        await interaction.followup.send("Sticky message has been removed!", ephemeral=True)
+        await interaction.followup.send("Pesan tetap telah berhasil dihapus!", ephemeral=True)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -125,7 +124,7 @@ class StickyMessages(commands.Cog):
             original_message = await self._get_message(message.channel.id, original_message_id)
 
             new_sticky = await message.channel.send(
-                f"📌 **Sticky Message:**\n\n{original_message.content}",
+                f"📌 **Pesan Tetap:**\n\n{original_message.content}",
                 embed=original_message.embeds[0] if original_message.embeds else None,
                 files=[await attachment.to_file() for attachment in original_message.attachments]
             )
@@ -140,7 +139,6 @@ class StickyMessages(commands.Cog):
             await self.bot.RUN(DELETE_STICKY_MESSAGE,
                                (message.guild.id,
                                 message.channel.id))
-
 
 async def setup(bot):
     await bot.add_cog(StickyMessages(bot))

@@ -1,63 +1,75 @@
-"""Cog yang berfungsi mengompresi file database SQLite menjadi format Gzip (.gz) dan mengirimkannya ke channel Discord sebagai cadangan (Backup) — BAGIAN 1."""
-
 import asyncio
 import gzip
 import os
 import shutil
 import tempfile
+import logging
 import discord
 from discord.ext import commands
-from lib.bot import KotabiBot
+from discord import app_commands
 
-# Keterangan: Mengambil jalur tempat file database SQLite disimpan di VPS Anda dari variabel lingkungan (environment variable).
-# Jika variabel "PATH_TO_DB" tidak ditemukan di VPS, maka sistem secara otomatis akan menggunakan jalur bawaan yaitu "data/db.sqlite3".
+# Menggunakan logger standar bot agar aktivitas tercatat rapi di terminal VPS
+logger = logging.getLogger("bot.database_backup")
+
+# Mengambil lokasi database dari Environment Variable VPS atau menggunakan default
 PATH_TO_DB = os.getenv("PATH_TO_DB", "data/db.sqlite3")
 
 
 def create_temporary_gzip_file():
-    """Fungsi sinkronus (Blocking Function) untuk menyalin data biner database asli dan mengompresinya menjadi format file .gz."""
-    # Membuat jalur lokasi file sementara (Temporary File) bernama "db.sqlite3.gz" di dalam folder temp sistem operasi VPS.
+    """Fungsi sinkronus untuk menyalin data biner database asli dan mengompresinya menjadi .gz."""
+    # Membuat jalur lokasi file sementara (Temporary File) di folder temp sistem operasi VPS
     temp_file_path = os.path.join(tempfile.gettempdir(), "db.sqlite3.gz")
-    
+
     # Membuka file database asli dalam mode membaca biner ('rb')
     with open(PATH_TO_DB, 'rb') as f_in:
-        # Membuka/membuat file sementara dalam mode menulis biner terkompresi Gzip ('wb')
+        # Membuka file sementara dalam mode menulis biner terkompresi Gzip ('wb')
         with gzip.open(temp_file_path, 'wb') as f_out:
-            # Menyalin seluruh isi data objek dari file database asli langsung ke dalam file kompresi Gzip
+            # Menyalin seluruh data database langsung ke dalam file kompresi Gzip
             shutil.copyfileobj(f_in, f_out)
-            
-    return temp_file_path  # Mengembalikan jalur lokasi file sementara yang sudah sukses dikompresi
+
+    return temp_file_path
 
 
-class DatabasePoster(commands.Cog):
-    def __init__(self, bot: KotabiBot):
+class DatabaseBackup(commands.Cog):
+    def __init__(self, bot):
         self.bot = bot
 
-    @discord.app_commands.command(name="post_db", description="Gzip the database file and post it to the channel.")
+    @app_commands.command(name="post_db", description="Mengompres database SQLite ke Gzip dan mengirimkannya sebagai cadangan (Khusus Admin).")
+    @app_commands.checks.has_permissions(administrator=True)
     async def post_db(self, interaction: discord.Interaction):
-        """Slash Command khusus yang digunakan untuk memicu pengiriman file cadangan (backup) database terkompresi ke Discord."""
-        # Menunda respon Discord (defer) agar interaksi perintah tidak hang/timeout jika ukuran file database Anda sangat besar
-        await interaction.response.defer()
-        
+        """Slash Command untuk memicu pengunggahan file cadangan database terkompresi secara aman."""
+        # Menunda respon dengan mode Ephemeral agar proses pengiriman aman dan tidak terlihat oleh warga biasa
+        await interaction.response.defer(ephemeral=True)
+
+        temp_file_path = None
         try:
-            # Keterangan: Menggunakan 'asyncio.to_thread' untuk mengalihkan proses kompresi file (I/O heavy) ke thread pekerja terpisah.
-            # Langkah ini sangat krusial agar Bot Kotabi Anda tidak mengalami "Freeze" (macet/silent) saat proses kompresi database sedang berlangsung.
+            # Menjalankan proses kompresi file di thread terpisah agar bot tidak mengalami freeze (macet)
             temp_file_path = await asyncio.to_thread(create_temporary_gzip_file)
-            
-            # Mengirimkan file sementara hasil kompresi tersebut ke dalam channel Discord tempat perintah dipicu
-            await interaction.followup.send(file=discord.File(temp_file_path, filename="db.sqlite3.gz"))
-            
+
+            # Mengirimkan file terkompresi secara privat ke admin yang meminta
+            await interaction.followup.send(
+                content="📦 **Cadangan database berhasil dibuat!** Silakan unduh berkas di bawah ini:",
+                file=discord.File(temp_file_path, filename="db.sqlite3.gz"),
+                ephemeral=True
+            )
+            logger.info(f"💾 Database backup berhasil diekspor oleh Administrator {interaction.user} (ID: {interaction.user.id})")
+
         except Exception as e:
-            # Jika terjadi kegagalan sistem internal, lemparkan pesan error ke sistem logging utama bot Anda
-            raise
-            
+            logger.error(f"❌ Gagal melakukan backup database: {e}")
+            await interaction.followup.send(
+                content=f"❌ Terjadi kesalahan internal saat mencadangkan database: `{e}`",
+                ephemeral=True
+            )
+
         finally:
-            # Keterangan: Blok 'finally' dijamin akan selalu berjalan di akhir proses, baik perintahnya sukses maupun terjadi error.
-            # Tujuannya adalah untuk menghapus file sementara (.gz) dari disk VPS Anda agar ruang penyimpanan penyimpanan server tidak penuh oleh file sampah.
-            if os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
+            # Menghapus file sementara (.gz) dari VPS agar penyimpanan disk tidak membengkak
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.remove(temp_file_path)
+                except Exception as e:
+                    logger.warning(f"⚠️ Gagal menghapus file sementara backup: {e}")
 
 
-async def setup(bot: KotabiBot):
-    """Fungsi standar dari arsitektur discord.py untuk mendaftarkan modul Cog DatabasePoster ini ke sistem utama Bot Kotabi."""
-    await bot.add_cog(DatabasePoster(bot))
+async def setup(bot):
+    """Mendaftarkan modul DatabaseBackup ke sistem utama Bot."""
+    await bot.add_cog(DatabaseBackup(bot))

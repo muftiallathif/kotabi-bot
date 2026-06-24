@@ -36,8 +36,8 @@ membership:
       point_threshold: 26
 
   moderator_role_ids:
-    - 1517801101959631009   # Royal Guard
-    - 1517801149191819427   # Prime Minister
+    - 1517801101959631009    # Royal Guard
+    - 1517801149191819427    # Prime Minister
 
   announcement_channel_id: 1403696014585495622
   grace_period_days: 3

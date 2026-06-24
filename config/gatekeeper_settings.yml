@@ -52,7 +52,7 @@ rank_structure:
       emoji: null
 
     - name: "【N5・男爵】Baron"
-      require_role: [1404219557333303419]  # 【N5・従男爵】Baronet
+      require_role: [1404219557333303419]
       combination_rank: false
       font: null
       font_size: null
@@ -86,7 +86,7 @@ rank_structure:
       emoji: null
 
     - name: "【N4・子爵】Viscount"
-      require_role: [1515998740203180202]  # 【N4・従子爵】Junior Viscount
+      require_role: [1515998740203180202]
       combination_rank: false
       font: null
       font_size: null
@@ -120,7 +120,7 @@ rank_structure:
       emoji: null
 
     - name: "【N3・伯爵】Count"
-      require_role: [1515999058915758090]  # 【N3・従伯爵】Junior Count
+      require_role: [1515999058915758090]
       combination_rank: false
       font: null
       font_size: null
@@ -154,7 +154,7 @@ rank_structure:
       emoji: null
 
     - name: "【N2・侯爵】Marquess"
-      require_role: [1515999289388699779]  # 【N2・従侯爵】Junior Marquess
+      require_role: [1515999289388699779]
       combination_rank: false
       font: null
       font_size: null
@@ -188,7 +188,7 @@ rank_structure:
       emoji: null
 
     - name: "【N1・公爵】Duke"
-      require_role: [1515999731355222136]  # 【N1・従公爵】Junior Duke
+      require_role: [1515999731355222136]
       combination_rank: false
       font: null
       font_size: null
@@ -204,9 +204,8 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    # ⭐ FIXED: Changed from "大公 / Archduke"
     - name: "【選帝侯】Prince Elector"
-      require_role: [1404219327833444362]  # 【N1・公爵】Duke
+      require_role: [1404219327833444362]
       combination_rank: false
       font: null
       font_size: 100
@@ -222,9 +221,8 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    # ⭐ FIXED: Changed from "王 / King"
     - name: "【国王】High King"
-      require_role: [1516000372441874452]  # 【選帝侯】Prince Elector
+      require_role: [1516000372441874452]
       combination_rank: false
       font: null
       font_size: 100
@@ -240,9 +238,8 @@ rank_structure:
       no_timeout: false
       emoji: null
 
-    # ⭐ FIXED: Changed from "大王 / High King"
     - name: "【覇王】Overlord"
-      require_role: [1516000507414577173]  # 【国王】High King
+      require_role: [1516000507414577173]
       combination_rank: false
       font: null
       font_size: 100
@@ -259,7 +256,7 @@ rank_structure:
       emoji: null
 
     - name: "【皇帝】Emperor"
-      require_role: [1516000520521650247]  # 【覇王】Overlord
+      require_role: [1516000520521650247]
       combination_rank: false
       font: null
       font_size: 90
@@ -276,11 +273,11 @@ rank_structure:
       emoji: null
 
 rank_settings:
-  1403184187669872650:  # Kotabi Japanese
-    announce_channel: 1515633144525754429  # honor-board
+  1403184187669872650:
+    announce_channel: 1515633144525754429
     restricted_quiz_names: []
     quiz_menu_message: |
-      Selamat datang di sistem rank Kotabi Japanese! 🎌
-      Pilih quiz di bawah untuk mulai naik rank. 頑張ってください！
+      Selamat datang di sistem peringkat kasta Kotabi Japanese! 🎌
+      Pilih ujian kuis di bawah ini untuk mendaftarkan ruang bilik ujian privat Anda. 頑張ってください！
 
-      ⚠️ Menu ini hanya berlaku di channel ini (quiz-rank-up). Quiz di channel quiz-public lainnya hanya untuk latihan/duel dan tidak akan menaikkan rank kamu.
+      ⚠️ Menu ini hanya berlaku di saluran ini (quiz-rank-up). Kuis di saluran quiz-public lainnya hanya untuk latihan atau duel dan TIDAK akan menaikkan peringkat kasta Anda.

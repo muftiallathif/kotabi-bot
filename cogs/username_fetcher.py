@@ -1,5 +1,5 @@
 import asyncio
-from lib.bot import KotabiBot
+from core.bot import KotabiBot
 import discord
 from discord.ext import commands
 
@@ -23,7 +23,6 @@ SELECT user_name FROM users WHERE discord_user_id = ?;"""
 
 FETCH_LOCK = asyncio.Lock()
 
-
 async def get_username_db(bot: KotabiBot, user_id: int) -> str:
     user = bot.get_user(user_id)
     if user:
@@ -39,8 +38,7 @@ async def get_username_db(bot: KotabiBot, user_id: int) -> str:
             await bot.RUN(INSERT_USER_QUERY, (user.id, user.display_name))
             return user.display_name
         else:
-            return 'Unknown User'
-
+            return 'Pengguna Tidak Dikenal'
 
 class UsernameFetcher(commands.Cog):
     def __init__(self, bot: KotabiBot):
@@ -48,7 +46,6 @@ class UsernameFetcher(commands.Cog):
 
     async def cog_load(self):
         await self.bot.RUN(CREATE_USERS_TABLE)
-
 
 async def setup(bot):
     await bot.add_cog(UsernameFetcher(bot))
