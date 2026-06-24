@@ -51,7 +51,9 @@ class KotabiBot(commands.Bot):
     async def load_cogs(self, cogs_to_load):
         cogs = [
             cog for cog in os.listdir(self.cog_folder)
-            if cog.endswith(".py") and (cogs_to_load == "*" or cog[:-3] in cogs_to_load)
+            if cog.endswith(".py")
+            and not cog.startswith("_")
+            and (cogs_to_load == "*" or cog[:-3] in cogs_to_load)
         ]
 
         for cog in cogs:
