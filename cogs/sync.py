@@ -16,7 +16,7 @@ class Sync(commands.Cog):
 
     @commands.command()
     @is_authorized()
-    async def sync_guild(self, ctx: commands.ext.commands.Context):
+    async def sync_guild(self, ctx: commands.Context):
         """Sinkronisasi perintah ke guild saat ini."""
         self.bot.tree.copy_global_to(guild=discord.Object(id=ctx.guild.id))
         self.bot.tree.clear_commands(guild=None)
@@ -25,7 +25,7 @@ class Sync(commands.Cog):
 
     @commands.command()
     @is_authorized()
-    async def sync_global(self, ctx: commands.ext.commands.Context):
+    async def sync_global(self, ctx: commands.Context):
         """Sinkronisasi perintah secara global."""
         await self.bot.tree.sync()
         await ctx.send("Perintah berhasil disinkronisasi secara global.")
