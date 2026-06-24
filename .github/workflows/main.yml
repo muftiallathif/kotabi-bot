@@ -7,6 +7,7 @@ name: Deploy Kotabi Japanese Bot
 # Memberikan izin kepada token GitHub untuk membuat rilis otomatis
 permissions:
   contents: write
+  actions: write
 
 # Pemicu jalannya otomatisasi
 on:
