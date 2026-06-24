@@ -26,3 +26,11 @@ class KotabiBot(commands.Bot):
             async with aiosqlite.connect(self.db_path) as db:
                 async with db.execute(query, parameters) as cursor:
                     return await cursor.fetchone()
+    
+    async def load_cogs(self, cogs_to_load):
+    cogs = [cog for cog in os.listdir(self.cog_folder) if cog.endswith(".py") and (cogs_to_load == "*" or cog[:-3] in cogs_to_load)]
+
+    for cog in cogs:
+        cog = f"{self.cog_folder}.{cog[:-3]}"
+        await self.load_extension(cog)
+        _log.info(f"Loaded {cog}")
