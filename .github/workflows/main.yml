@@ -7,7 +7,6 @@ name: Deploy Kotabi Japanese Bot
 # Memberikan izin kepada token GitHub untuk membuat rilis otomatis
 permissions:
   contents: write
-  actions: write
 
 # Pemicu jalannya otomatisasi
 on:
@@ -58,12 +57,3 @@ jobs:
       - name: Clean up unused Docker images
         run: |
           docker image prune -f
-
-      # 6. Membuat halaman Release otomatis di halaman GitHub Anda
-      - name: Release on GitHub
-        uses: "marvinpinto/action-automatic-releases@latest"
-        with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          prerelease: false
-          automatic_release_tag: "latest"
-          title: "Release v1.0.${{ github.run_number }}"
