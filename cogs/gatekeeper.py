@@ -79,13 +79,22 @@ ON CONFLICT(user_id) DO UPDATE SET thread_id = excluded.thread_id;"""
 GET_USER_THREAD = """SELECT thread_id FROM user_threads WHERE user_id = ?;"""
 
 
+def _get_rank_structure(guild_id: int) -> list:
+    """
+    Ambil rank_structure dari config dengan aman.
+    Coba int key dulu, fallback ke str key (YAML kadang load sebagai str).
+    """
+    rank_map = gatekeeper_settings.get("rank_structure", {})
+    return rank_map.get(guild_id) or rank_map.get(str(guild_id)) or []
+
+
 async def quiz_autocomplete(interaction: discord.Interaction, current_input: str):
     """Menyediakan daftar nama kuis otomatis untuk perintah Slash Command."""
     guild_id = interaction.guild.id
-    rank_structure = gatekeeper_settings.get("rank_structure", {}).get(guild_id, [])
-    
+    rank_structure = _get_rank_structure(guild_id)
+
     rank_names = [
-        quiz["name"] for quiz in rank_structure 
+        quiz["name"] for quiz in rank_structure
         if quiz.get("combination_rank") is False and quiz.get("no_timeout") is False
     ]
     possible_choices = [discord.app_commands.Choice(name=rank_name, value=rank_name) for rank_name in rank_names]
@@ -228,11 +237,10 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
     def __init__(self, levelup: "LevelUp", guild_id: int):
         self.levelup = levelup
         self.guild_id = guild_id
-        
-        # Mengambil struktur kasta dari server_map / gatekeeper config
-        rank_structure = gatekeeper_settings.get("rank_structure", {}).get(guild_id, [])
+
+        rank_structure = _get_rank_structure(guild_id)
         rank_names = [(quiz["name"], quiz.get("emoji")) for quiz in rank_structure if quiz.get("command")]
-        
+
         super().__init__(
             discord.ui.Select(
                 custom_id=f"quizmenu-guild:{guild_id}",
@@ -253,6 +261,7 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
     @classmethod
     async def from_custom_id(cls, interaction: discord.Interaction, item, match: re.Match[str]) -> discord.ui.DynamicItem:
         guild_id = int(match.group("guild_id"))
+        # FIX BUG 3: nama cog harus persis sama dengan nama class yang didaftarkan
         levelup = interaction.client.get_cog("LevelUp")
         if not levelup:
             raise RuntimeError("Modul LevelUp tidak ditemukan aktif.")
@@ -261,22 +270,34 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
 
-        # ── BARU: cek VIP lewat has_vip_role() dari lib/checks.py ──
+        # Cek VIP lewat has_vip_role() dari lib/checks.py
         if not has_vip_role(interaction.user, interaction.guild_id):
             await interaction.followup.send(Msg.GATEKEEPER_VIP_ONLY, ephemeral=True)
             return
-        # ─────────────────────────────────────────────────────────────
 
         assert interaction.data is not None and "custom_id" in interaction.data, "Interaction data tidak valid."
         rank = self.item.values[0]
         guild_id = interaction.guild.id
-        rank_structure = gatekeeper_settings.get("rank_structure", {}).get(guild_id, [])
-        quiz_command = None
 
+        # FIX BUG 1: gunakan helper _get_rank_structure yang menangani int/str key
+        rank_structure = _get_rank_structure(guild_id)
+
+        # FIX BUG 1+2: cari quiz_command dengan benar dan validasi sebelum lanjut
+        quiz_command = None
         for quiz in rank_structure:
             if quiz["name"].lower() == rank.lower():
-                quiz_command = quiz["command"]
+                quiz_command = quiz.get("command")
                 break
+
+        if not quiz_command:
+            _log.error(f"❌ quiz_command tidak ditemukan untuk rank '{rank}' di guild {guild_id}. "
+                       f"Pastikan rank_structure di gatekeeper_settings.yml menggunakan guild_id integer.")
+            await interaction.followup.send(
+                f"❌ Perintah kuis untuk kasta **{rank}** tidak ditemukan di konfigurasi. "
+                f"Hubungi admin server.",
+                ephemeral=True
+            )
+            return
 
         rank_has_cooldown = await self.levelup.rank_has_cooldown(interaction.guild.id, rank)
         is_on_cooldown, cooldown_message = await self.levelup.is_on_cooldown_create(interaction.user, rank, rank_has_cooldown)
@@ -288,7 +309,7 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
 
         quiz_thread_record = await self.levelup.bot.GET_ONE(GET_USER_THREAD, (interaction.user.id,))
         quiz_thread = None
-        
+
         if quiz_thread_record:
             thread_id = quiz_thread_record[0]
             quiz_thread = interaction.guild.get_thread(thread_id)
@@ -300,8 +321,8 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
 
         if not quiz_thread:
             quiz_thread = await interaction.channel.create_thread(
-                name=f"📖 Ujian {interaction.user.display_name}"[:100], 
-                auto_archive_duration=60, 
+                name=f"📖 Ujian {interaction.user.display_name}"[:100],
+                auto_archive_duration=60,
                 reason="Pembuatan Ruang Ujian Kuis Kasta"
             )
             await self.levelup.bot.RUN(ADD_USER_THREAD, (interaction.user.id, quiz_thread.id))
@@ -322,6 +343,7 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
         if interaction.user not in quiz_thread.members:
             await quiz_thread.add_user(interaction.user)
 
+        # FIX BUG 2: quiz_command sudah dipastikan tidak None di atas
         await quiz_thread.send(
             f"🏯 {interaction.user.mention}, selamat datang di bilik ujian kasta **{rank}**!\n"
             f"Untuk memulai ujian, silakan salin dan kirim perintah di bawah ini secara presisi tanpa ada karakter tambahan:"
@@ -350,6 +372,8 @@ class LevelUp(commands.Cog):
     async def is_restricted_quiz(self, message: discord.Message):
         """Memeriksa apakah kuis yang dipanggil merupakan kuis bertahap yang dibatasi."""
         settings = gatekeeper_settings.get("rank_settings", {}).get(message.guild.id, {})
+        if not settings:
+            settings = gatekeeper_settings.get("rank_settings", {}).get(str(message.guild.id), {})
         restricted_quizzes = settings.get("restricted_quiz_names", [])
         for quiz_name in restricted_quizzes:
             if quiz_name.lower() in message.content.lower():
@@ -365,7 +389,7 @@ class LevelUp(commands.Cog):
 
     async def rank_has_cooldown(self, guild_id: int, rank_name: str):
         """Memeriksa apakah kasta kuis tertentu memiliki aturan pembatasan cooldown mingguan."""
-        rank_structure = gatekeeper_settings.get("rank_structure", {}).get(guild_id, [])
+        rank_structure = _get_rank_structure(guild_id)
         for rank in rank_structure:
             if rank["name"] == rank_name:
                 return not rank.get("no_timeout", False)
@@ -377,7 +401,7 @@ class LevelUp(commands.Cog):
             return True
 
         guild_id = message.guild.id
-        rank_structure = gatekeeper_settings.get("rank_structure", {}).get(guild_id, [])
+        rank_structure = _get_rank_structure(guild_id)
 
         restricted_quiz_name, is_restricted = await self.is_restricted_quiz(message)
         is_in_levelup_channel = await self.is_in_levelup_channel(message)
@@ -422,12 +446,11 @@ class LevelUp(commands.Cog):
         last_attempt = await self.bot.GET_ONE(GET_LAST_QUIZ_ATTEMPT, (message.guild.id, message.author.id, quiz_name))
         if not last_attempt:
             return False
-        
+
         _, last_attempt_time = last_attempt
-        # Tangani parsing waktu string isoformat
         if isinstance(last_attempt_time, str):
             last_attempt_time = datetime.fromisoformat(last_attempt_time.replace("Z", "+00:00"))
-        
+
         next_sunday_midnight = get_next_sunday_midnight_from(last_attempt_time)
         if utcnow() < next_sunday_midnight:
             unix_timestamp = int(next_sunday_midnight.timestamp())
@@ -450,12 +473,12 @@ class LevelUp(commands.Cog):
 
     async def get_corresponding_quiz_data(self, message: discord.Message, quiz_result: dict):
         """Mencocokkan data deck laporan Kotoba API dengan data kasta di setelan kerajaan."""
-        rank_structure = gatekeeper_settings.get("rank_structure", {}).get(message.guild.id, [])
+        rank_structure = _get_rank_structure(message.guild.id)
         if not quiz_result["decks"][0].get("shortName"):
             return None
         deck_names = [deck["shortName"] for deck in quiz_result["decks"]]
         index_specified = bool(quiz_result["decks"][0].get("startIndex"))
-        
+
         for rank in rank_structure:
             index_required = rank.get("deck_range", None) is not None
             rank_decks = set(rank["decks"]) if rank.get("decks") is not None else set()
@@ -465,7 +488,7 @@ class LevelUp(commands.Cog):
 
     async def get_all_quiz_roles(self, guild: discord.Guild):
         """Mengumpulkan seluruh objek peran (Roles) kasta kuis di server."""
-        rank_structure = gatekeeper_settings.get("rank_structure", {}).get(guild.id, [])
+        rank_structure = _get_rank_structure(guild.id)
         roles_list = []
         for role_data in rank_structure:
             if role_data.get("rank_to_get"):
@@ -480,12 +503,12 @@ class LevelUp(commands.Cog):
         if quiz_data.get("rank_to_get"):
             all_roles = await self.get_all_quiz_roles(member.guild)
             role_to_get = member.guild.get_role(quiz_data["rank_to_get"])
-            
+
             # Cabut semua peran kasta kuis lama agar kasta tetap rapi tunggal
             roles_to_remove = [r for r in all_roles if r in member.roles and r.id != quiz_data["rank_to_get"]]
             if roles_to_remove:
                 await member.remove_roles(*roles_to_remove)
-            
+
             if role_to_get:
                 await member.add_roles(role_to_get)
             return role_to_get
@@ -495,12 +518,12 @@ class LevelUp(commands.Cog):
 
     async def check_if_combination_rank_earned(self, member: discord.Member):
         """Memeriksa pencapaian gelar kombinasi (misal: gabungan kelulusan beberapa kuis kasta)."""
-        rank_structure = gatekeeper_settings.get("rank_structure", {}).get(member.guild.id, [])
+        rank_structure = _get_rank_structure(member.guild.id)
         combination_ranks = [rank_data for rank_data in rank_structure if rank_data.get("combination_rank") is True]
-        
+
         earned_records = await self.bot.GET(GET_PASSED_QUIZZES, (member.guild.id, member.id))
         earned_ranks = [rank[0] for rank in earned_records]
-        
+
         combination_ranks.reverse()
         for rank in combination_ranks:
             if await self.already_owns_higher_or_same_role(rank["rank_to_get"], member):
@@ -514,10 +537,10 @@ class LevelUp(commands.Cog):
     async def send_in_announcement_channel(self, member: discord.Member, message: str):
         """Mengirimkan log pengumuman kelulusan ke saluran kehormatan (Honor Board) secara dinamis."""
         guild_id = member.guild.id
-        # Coba ambil ID saluran pengumuman dari YML, jika tidak ada, baca dinamis dari server_map Level 0
-        settings = gatekeeper_settings.get("rank_settings", {}).get(guild_id, {})
+        settings = gatekeeper_settings.get("rank_settings", {}).get(guild_id) or \
+                   gatekeeper_settings.get("rank_settings", {}).get(str(guild_id)) or {}
         announce_channel_id = settings.get("announce_channel") or get_channel_id(guild_id, "honor_board")
-        
+
         announcement_channel = member.guild.get_channel(announce_channel_id)
         if announcement_channel:
             await announcement_channel.send(message)
@@ -545,7 +568,7 @@ class LevelUp(commands.Cog):
         _, last_attempt_time = last_attempt
         if isinstance(last_attempt_time, str):
             last_attempt_time = datetime.fromisoformat(last_attempt_time.replace("Z", "+00:00"))
-        
+
         next_attempt_time = last_attempt_time + timedelta(days=6)
         return int(next_attempt_time.timestamp())
 
@@ -597,7 +620,7 @@ class LevelUp(commands.Cog):
             if not any(role in member.roles for role in required_roles):
                 mentions = ", ".join(role.mention for role in required_roles)
                 await message.channel.send(
-                    f"⚠️ {member.mention}, Anda membutuhkan salah satu peran berikut untuk melamar kasta ini: {mentions}", 
+                    f"⚠️ {member.mention}, Anda membutuhkan salah satu peran berikut untuk melamar kasta ini: {mentions}",
                     allowed_mentions=discord.AllowedMentions(roles=False)
                 )
                 return
@@ -635,7 +658,7 @@ class LevelUp(commands.Cog):
             await self.bot.RUN(RESET_ALL_QUIZ_ATTEMPTS, (interaction.guild.id, user.id))
             await interaction.response.send_message(f"🧹 Berhasil memutihkan seluruh sanksi cooldown kuis untuk {user.mention}!")
         else:
-            rank_structure = gatekeeper_settings.get("rank_structure", {}).get(interaction.guild.id, [])
+            rank_structure = _get_rank_structure(interaction.guild.id)
             if not any(quiz_to_reset in rank["name"] for rank in rank_structure):
                 await interaction.response.send_message("❌ Nama kuis kasta tidak ditemukan di database server ini.", ephemeral=True)
                 return
@@ -688,14 +711,14 @@ class LevelUp(commands.Cog):
         else:
             member_string = [f"{member} (ID: {member.id})" for member in role.members]
             member_string.append(f"\nTotal: {member_count} Warga.")
-            
+
             filepath = "data/rank_user_count.txt"
             os.makedirs("data", exist_ok=True)
             with open(filepath, "w", encoding="utf-8") as text_file:
                 text_file.write("\n".join(member_string))
-            
+
             await interaction.response.send_message(
-                f"📝 Daftar warga kasta {role.name} terlalu besar untuk pesan obrolan. Kami melampirkannya sebagai berkas biner di bawah ini:", 
+                f"📝 Daftar warga kasta {role.name} terlalu besar untuk pesan obrolan. Kami melampirkannya sebagai berkas biner di bawah ini:",
                 file=discord.File(filepath)
             )
             os.remove(filepath)
@@ -716,16 +739,16 @@ class LevelUp(commands.Cog):
         if guild_id and not guild_id.isdigit():
             await interaction.response.send_message("❌ ID Guild tidak valid.", ephemeral=True)
             return
-        
+
         target_guild_id = int(guild_id) if guild_id else interaction.guild.id
-        rank_structure = gatekeeper_settings.get("rank_structure", {}).get(target_guild_id, [])
+        rank_structure = _get_rank_structure(target_guild_id)
 
         if not rank_structure:
             await interaction.response.send_message("❌ Belum ada susunan kasta yang didefinisikan untuk server ini.", ephemeral=True)
             return
 
         rank_command_embed = discord.Embed(
-            title="📜 Buku Panduan Perintah Ujian Kasta Kotabi", 
+            title="📜 Buku Panduan Perintah Ujian Kasta Kotabi",
             color=discord.Color.blurple(),
             timestamp=utcnow()
         )
@@ -757,8 +780,8 @@ class LevelUp(commands.Cog):
                 role_mention = await self.rank_to_get_mention(target_guild_id, rank)
                 quizzes_text = ", ".join([f"`{q}`" for q in rank['quizzes_required']])
                 rank_command_embed.add_field(
-                    name=f"⚜️ {rank['name']} (Gelar Kombinasi)", 
-                    value=f"🧩 Syarat Kelulusan: {quizzes_text}\n🏆 Hadiah Gelar: {role_mention}", 
+                    name=f"⚜️ {rank['name']} (Gelar Kombinasi)",
+                    value=f"🧩 Syarat Kelulusan: {quizzes_text}\n🏆 Hadiah Gelar: {role_mention}",
                     inline=False
                 )
 
@@ -771,11 +794,11 @@ class LevelUp(commands.Cog):
         last_attempt = await self.bot.GET_ONE(GET_LAST_QUIZ_ATTEMPT, (member.guild.id, member.id, quiz_name))
         if not last_attempt:
             return False, None
-        
+
         _, last_attempt_time = last_attempt
         if isinstance(last_attempt_time, str):
             last_attempt_time = datetime.fromisoformat(last_attempt_time.replace("Z", "+00:00"))
-        
+
         next_sunday_midnight = get_next_sunday_midnight_from(last_attempt_time)
         if utcnow() < next_sunday_midnight:
             unix_timestamp = int(next_sunday_midnight.timestamp())
@@ -795,11 +818,12 @@ class LevelUp(commands.Cog):
 
         view = discord.ui.View(timeout=None)
         view.add_item(DynamicQuizMenu(self, interaction.guild.id))
-        
-        # Coba ambil ucapan menu dari file YAML kuis
-        settings = gatekeeper_settings.get("rank_settings", {}).get(interaction.guild.id, {})
-        quiz_menu_message = settings.get("quiz_menu_message") or "🏰 **KOTABI QUIZ CHAMBER** 🏰\n\nSilakan pilih kasta ujian kuis bahasa Jepang Anda di bawah ini untuk mendaftarkan ruang bilik ujian privat!"
-        
+
+        settings = gatekeeper_settings.get("rank_settings", {}).get(interaction.guild.id) or \
+                   gatekeeper_settings.get("rank_settings", {}).get(str(interaction.guild.id)) or {}
+        quiz_menu_message = settings.get("quiz_menu_message") or \
+            "🏰 **KOTABI QUIZ CHAMBER** 🏰\n\nSilakan pilih kasta ujian kuis bahasa Jepang Anda di bawah ini untuk mendaftarkan ruang bilik ujian privat!"
+
         await interaction.channel.send(quiz_menu_message, view=view)
 
 
