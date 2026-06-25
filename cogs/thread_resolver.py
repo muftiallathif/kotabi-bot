@@ -1,4 +1,4 @@
-from core.bot import KotabiBot
+from lib.bot import KotabiBot
 import discord
 import os
 import yaml

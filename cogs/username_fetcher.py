@@ -1,5 +1,5 @@
 import asyncio
-from core.bot import KotabiBot
+from lib.bot import KotabiBot
 import discord
 from discord.ext import commands
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 import discord
 from discord.ext import commands, tasks
-from core.bot import KotabiBot
+from lib.bot import KotabiBot
 
 _log = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ DEBUG_USER_ID: Optional[int] = int(os.getenv("DEBUG_USER", 0)) or None
 
 FILE_SCAN_INTERVAL = 3
 HEALTH_CHECK_INTERVAL = 60
-HEALTH_WARN_THRESHOLD = 300
+HEALTH_WARN_THRESHOLD = 30
 
 class Watchdog(commands.Cog):
     def __init__(self, bot: KotabiBot):

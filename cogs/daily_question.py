@@ -1,159 +1,168 @@
 import discord
-from discord.ext import commands
-from discord import app_commands
-import re
+import yaml
+import os
 import logging
+import aiohttp
+from discord.ext import commands, tasks
+from discord.utils import utcnow
 
-from lib.config import get_role_id
+from core.bot import KotabiBot
 
-logger = logging.getLogger("bot.custom_role")
+_log = logging.getLogger("bot.daily_question")
 
-class CustomRole(commands.Cog):
-    def __init__(self, bot):
+DAILY_QUESTIONS_SETTINGS_PATH = (
+    os.getenv("DAILY_QUESTIONS_SETTINGS_PATH") or "config/daily_questions_settings.yml"
+)
+
+daily_questions_settings: dict = {}
+
+if os.path.exists(DAILY_QUESTIONS_SETTINGS_PATH):
+    try:
+        with open(DAILY_QUESTIONS_SETTINGS_PATH, "r", encoding="utf-8") as f:
+            daily_questions_settings = yaml.safe_load(f) or {}
+    except Exception as e:
+        _log.error(f"❌ Gagal memuat daily_questions_settings.yml: {e}")
+else:
+    _log.warning(f"⚠️ File {DAILY_QUESTIONS_SETTINGS_PATH} tidak ditemukan.")
+
+# --- DATABASE QUERIES ---
+
+CREATE_DAILY_QUESTIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS daily_questions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id INTEGER NOT NULL,
+    channel_id INTEGER NOT NULL,
+    question TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
+GET_RECENT_QUESTIONS = """
+SELECT question FROM daily_questions
+WHERE guild_id = ? AND channel_id = ?
+ORDER BY created_at DESC LIMIT 10;
+"""
+
+GET_TODAYS_QUESTION = """
+SELECT question FROM daily_questions
+WHERE guild_id = ? AND channel_id = ?
+AND date(created_at) = date('now')
+LIMIT 1;
+"""
+
+INSERT_QUESTION = """
+INSERT INTO daily_questions (guild_id, channel_id, question, created_at)
+VALUES (?, ?, ?, ?);
+"""
+
+PROMPT_TEMPLATE = """Buatlah satu pertanyaan harian dalam Bahasa Jepang yang menarik dan original untuk mendorong diskusi di komunitas belajar Bahasa Jepang.
+Pertanyaan harus menantang namun tidak terlalu sulit, dan mendorong percakapan.
+Berikut adalah pertanyaan-pertanyaan yang sudah pernah ditanyakan sebelumnya (hindari topik yang serupa):
+
+{recent_questions_str}
+
+Berikan hanya teks pertanyaannya saja dalam Bahasa Jepang, tanpa penjelasan tambahan."""
+
+
+class DailyQuestion(commands.Cog):
+    def __init__(self, bot: KotabiBot):
         self.bot = bot
+        self.api_key = os.getenv("OPENAI_KEY")
 
     async def cog_load(self):
-        """Inisialisasi tabel database peran kustom milik pengguna secara asinkron."""
-        await self.bot.RUN("""
-            CREATE TABLE IF NOT EXISTS custom_roles (
-                guild_id INTEGER,
-                user_id INTEGER,
-                role_id INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (guild_id, user_id)
-            )
-        """)
+        await self.bot.RUN(CREATE_DAILY_QUESTIONS_TABLE)
+        if not self.api_key:
+            _log.warning("⚠️ OPENAI_KEY tidak ditemukan. Fitur daily question dinonaktifkan.")
+            return
+        if not daily_questions_settings:
+            _log.warning("⚠️ daily_questions_settings.yml kosong. Task tidak dijalankan.")
+            return
+        self.check_daily_questions.start()
 
-    async def get_user_custom_role(self, guild_id: int, user_id: int) -> int:
-        """Mengambil ID peran kustom milik pengguna dari database secara asinkron."""
-        row = await self.bot.GET_ONE(
-            "SELECT role_id FROM custom_roles WHERE guild_id = ? AND user_id = ?", 
-            (guild_id, user_id)
-        )
-        return row[0] if row else None
+    def cog_unload(self):
+        self.check_daily_questions.cancel()
 
-    async def save_custom_role(self, guild_id: int, user_id: int, role_id: int):
-        """Menyimpan atau memperbarui data peran kustom milik pengguna di database secara asinkron."""
-        await self.bot.RUN(
-            "INSERT OR REPLACE INTO custom_roles (guild_id, user_id, role_id) VALUES (?, ?, ?)", 
-            (guild_id, user_id, role_id)
-        )
+    async def get_question_prompt(self, guild_id: int, channel_id: int) -> str:
+        recent_questions = await self.bot.GET(GET_RECENT_QUESTIONS, (guild_id, channel_id))
+        recent_questions_str = "\n".join([q[0] for q in recent_questions]) or "(Belum ada pertanyaan sebelumnya)"
+        return PROMPT_TEMPLATE.format(recent_questions_str=recent_questions_str)
 
-    async def delete_custom_role_db(self, guild_id: int, user_id: int):
-        """Menghapus data peran kustom milik pengguna dari database secara asinkron."""
-        await self.bot.RUN(
-            "DELETE FROM custom_roles WHERE guild_id = ? AND user_id = ?", 
-            (guild_id, user_id)
-        )
+    async def generate_question(self, guild_id: int, channel_id: int) -> str:
+        prompt = await self.get_question_prompt(guild_id, channel_id)
 
-    def has_premium_access(self, member: discord.Member) -> bool:
-        """Memeriksa kelayakan warga berdasarkan peran donatur aktif di config."""
-        guild_id = member.guild.id
-        premium_roles = ["patron", "scholar", "companion"]
-        for role_name in premium_roles:
-            role_id = get_role_id(guild_id, role_name)
-            role = member.guild.get_role(role_id)
-            if role and role in member.roles:
-                return True
-        return False
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
 
-    @app_commands.command(name="create_role", description="Membuat peran kustom estetik Anda sendiri (Khusus Donatur VIP).")
-    @app_commands.describe(name="Nama peran kustom pilihan Anda", color_hex="Kode warna Hex (contoh: #ff0055)")
-    async def create_role(self, interaction: discord.Interaction, name: str, color_hex: str):
-        """Membuat peran baru dengan warna unik untuk donatur VIP."""
-        guild_id = interaction.guild_id
-        member = interaction.user
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Kamu adalah asisten yang membantu membuat pertanyaan harian menarik dalam Bahasa Jepang untuk komunitas belajar.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.9,
+            "max_tokens": 200,
+        }
 
-        # Validasi hak istimewa donatur premium
-        if not self.has_premium_access(member):
-            await interaction.response.send_message(
-                "❌ Fitur kustomisasi peran hanya tersedia bagi donatur aktif (**Patron**, **Scholar**, atau **Companion**)! Dukung server kami untuk membuka akses.", 
-                ephemeral=True
-            )
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers,
+                json=payload,
+            ) as response:
+                if response.status != 200:
+                    error_data = await response.json()
+                    raise Exception(f"OpenAI API error: {error_data}")
+                data = await response.json()
+                return data["choices"][0]["message"]["content"].strip()
+
+    async def post_daily_question(self, guild_id: int, channel_id: int):
+        channel = self.bot.get_channel(channel_id)
+        if not channel:
+            _log.warning(f"⚠️ Channel ID {channel_id} tidak ditemukan di cache bot.")
             return
 
-        # Validasi kecocokan format kode warna Hex
-        if not re.match(r"^#[0-9a-fA-F]{6}$", color_hex):
-            await interaction.response.send_message(
-                "❌ Format kode warna Hex salah! Gunakan format standar seperti `#ff0055`.", 
-                ephemeral=True
-            )
+        # Cek apakah pertanyaan hari ini sudah pernah dikirim
+        existing_question = await self.bot.GET_ONE(GET_TODAYS_QUESTION, (guild_id, channel_id))
+        if existing_question:
             return
-
-        existing_role_id = await self.get_user_custom_role(guild_id, member.id)
-        color = discord.Color(int(color_hex.lstrip('#'), 16))
-
-        if existing_role_id:
-            existing_role = interaction.guild.get_role(existing_role_id)
-            if existing_role:
-                try:
-                    await existing_role.edit(name=name, color=color)
-                    await interaction.response.send_message(
-                        f"✨ Berhasil memperbarui peran kustom Anda menjadi **{name}** dengan warna baru `{color_hex}`!", 
-                        ephemeral=True
-                    )
-                    return
-                except discord.Forbidden:
-                    logger.warning(f"⚠️ Izin tidak cukup untuk mengedit peran {existing_role_id}")
 
         try:
-            # Buat peran baru di server Discord
-            new_role = await interaction.guild.create_role(
-                name=name, 
-                color=color, 
-                reason=f"Peran kustom atas permintaan {member.name}"
-            )
+            question = await self.generate_question(guild_id, channel_id)
+            current_time = utcnow()
 
-            # Sematkan peran tersebut ke sang donatur
-            await member.add_roles(new_role)
-            await self.save_custom_role(guild_id, member.id, new_role.id)
+            await self.bot.RUN(INSERT_QUESTION, (guild_id, channel_id, question, current_time))
 
-            await interaction.response.send_message(
-                f"🎨 Sukses! Peran estetik **{name}** telah diciptakan dan disematkan di profil Anda!", 
-                ephemeral=True
+            embed = discord.Embed(
+                title="🌸 今日の質問 / Pertanyaan Hari Ini",
+                description=question,
+                color=discord.Color.blue(),
             )
+            embed.set_footer(text="Jawab pertanyaan ini untuk berlatih Bahasa Jepang!")
+
+            await channel.send(embed=embed)
+            _log.info(f"✅ Pertanyaan harian berhasil dikirim ke channel {channel_id}")
+
         except Exception as e:
-            logger.error(f"❌ Gagal membuat peran kustom: {e}")
-            await interaction.response.send_message(
-                "❌ Terjadi kegagalan sistem saat membuat peran baru. Pastikan posisi bot berada di atas kasta target.", 
-                ephemeral=True
-            )
+            _log.error(f"❌ Gagal mengirim pertanyaan harian ke channel {channel_id}: {e}")
 
-    @app_commands.command(name="delete_role", description="Menghapus peran kustom estetik Anda.")
-    async def delete_role(self, interaction: discord.Interaction):
-        """Menghapus peran kustom milik donatur."""
-        guild_id = interaction.guild_id
-        member = interaction.user
+    @tasks.loop(minutes=1)
+    async def check_daily_questions(self):
+        """Mengecek setiap menit apakah sudah waktunya mengirim pertanyaan harian."""
+        for guild_id, settings in daily_questions_settings.items():
+            guild_id = int(guild_id)
+            for channel_id in settings.get("channels", []):
+                channel_id = int(channel_id)
+                await self.post_daily_question(guild_id, channel_id)
 
-        role_id = await self.get_user_custom_role(guild_id, member.id)
-        if not role_id:
-            await interaction.response.send_message(
-                "❌ Anda belum memiliki peran kustom di server ini.", 
-                ephemeral=True
-            )
-            return
+    @check_daily_questions.before_loop
+    async def before_check(self):
+        await self.bot.wait_until_ready()
 
-        role = interaction.guild.get_role(role_id)
-        if role:
-            try:
-                await role.delete(reason="Dihapus secara mandiri oleh pemilik")
-                await self.delete_custom_role_db(guild_id, member.id)
-                await interaction.response.send_message(
-                    "🧹 Peran kustom Anda berhasil dihapus dari sistem kerajaan.", 
-                    ephemeral=True
-                )
-            except Exception as e:
-                logger.error(f"❌ Gagal menghapus peran kustom: {e}")
-                await interaction.response.send_message(
-                    "❌ Terjadi masalah teknis saat menghapus peran kustom Anda.", 
-                    ephemeral=True
-                )
-        else:
-            await self.delete_custom_role_db(guild_id, member.id)
-            await interaction.response.send_message(
-                "🧹 Peran kustom Anda telah dibersihkan dari database kerajaan.", 
-                ephemeral=True
-            )
 
-async def setup(bot):
-    await bot.add_cog(CustomRole(bot))
+async def setup(bot: KotabiBot):
+    await bot.add_cog(DailyQuestion(bot))

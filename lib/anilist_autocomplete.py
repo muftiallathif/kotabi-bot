@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 from discord.ext import tasks
 
-from core.bot import KotabiBot
+from lib.bot import KotabiBot
 
 ANILIST_NAME_QUERY = """
 query ($search: String, $type: MediaType) {
