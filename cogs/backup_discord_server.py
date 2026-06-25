@@ -148,8 +148,8 @@ class FullBackup(commands.Cog):
         self.bot = bot
 
     @discord.app_commands.command(
-        name="backup_discord_server",
-        description="Backup STRUKTUR LENGKAP server Discord (channel, role, emoji, dst) ke JSON — bukan database, bukan permission saja. (Khusus Admin)."
+    name="backup_discord_server",
+    description="Backup struktur lengkap server (channel, role, emoji, dst) ke JSON (Khusus Admin)."
     )
     @discord.app_commands.guild_only()
     @discord.app_commands.default_permissions(administrator=True)
