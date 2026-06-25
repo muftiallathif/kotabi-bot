@@ -385,8 +385,8 @@ class RestructureServer(commands.Cog):
         self.bot = bot
 
     @discord.app_commands.command(
-        name="structure_preview",
-        description="Lihat pratinjau penataan ulang kategori & channel tanpa mengubah apa pun (Khusus Admin)."
+    name="setup_structure",
+    description="Tata ulang kategori, posisi channel & permission sesuai blueprint (Khusus Admin)."
     )
     @discord.app_commands.guild_only()
     @discord.app_commands.default_permissions(administrator=True)
