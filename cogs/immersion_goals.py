@@ -5,6 +5,8 @@ from discord.ext import commands
 from core.bot import KotabiBot
 from lib.media_types import LOG_CHOICES, MEDIA_TYPES
 from lib.immersion_helpers import is_valid_channel
+from lib.checks import is_vip
+from lib.messages import Msg
 from typing import Optional
 
 # --- QUERY DATABASE SQLITE --- #
@@ -97,19 +99,17 @@ async def check_goal_status(bot: KotabiBot, user_id: int, media_type: str):
         current_time = discord.utils.utcnow()
         timestamp_end = int(end_date_dt.timestamp())
         timestamp_created = int(created_at_dt.timestamp())
-        
+
         if goal_type == 'amount':
             unit_name = MEDIA_TYPES[media_type]['unit_name']
         else:
             unit_name = 'poin'
 
-        # Kalkulasi persentase dan gambar emoji progress bar
         percentage = min(int((progress / goal_value) * 100), 100)
-        bar_filled = "🟩" * (percentage // 10)  # Tiap kotak hijau melambangkan 10% progres
+        bar_filled = "🟩" * (percentage // 10)
         bar_empty = "⬜" * (10 - (percentage // 10))
         progress_bar = f"{bar_filled}{bar_empty} ({percentage}%)"
 
-        # Tentukan status kalimat berdasarkan rentang waktu dan progres pencapaian
         if (created_at_dt <= current_time <= end_date_dt) and progress < goal_value:
             goal_status = f"🎯 Target sedang berjalan: `{progress}`/`{goal_value}` {unit_name} untuk `{media_type}` - Berakhir <t:{timestamp_end}:R>.\n{progress_bar}"
         elif progress >= goal_value:
@@ -142,19 +142,20 @@ class GoalsCog(commands.Cog):
         discord.app_commands.Choice(name='Poin', value='points'),
         discord.app_commands.Choice(name='Jumlah (Amount)', value='amount')],
         media_type=LOG_CHOICES)
+    @is_vip()
     async def log_set_goal(
-        self, 
-        interaction: discord.Interaction, 
-        media_type: str, 
-        goal_type: str, 
-        goal_value: int, 
-        end_date_or_hours: str, 
+        self,
+        interaction: discord.Interaction,
+        media_type: str,
+        goal_type: str,
+        goal_value: int,
+        end_date_or_hours: str,
         start_date: Optional[str] = None
     ):
         """Slash command untuk membuat target personal (goals) belajar baru."""
         if not await is_valid_channel(interaction):
-            return await interaction.response.send_message("Kamu hanya dapat menggunakan perintah ini di DM atau di saluran pencatatan (log channels).", ephemeral=True)
-        
+            return await interaction.response.send_message(Msg.INVALID_CHANNEL, ephemeral=True)
+
         try:
             if end_date_or_hours.isdigit():
                 hours = int(end_date_or_hours)
@@ -162,9 +163,9 @@ class GoalsCog(commands.Cog):
             else:
                 end_date_dt = datetime.strptime(end_date_or_hours, '%Y-%m-%d').replace(tzinfo=timezone.utc)
                 if end_date_dt < discord.utils.utcnow().replace(minute=0, second=0, microsecond=0):
-                    return await interaction.response.send_message("Tanggal berakhir harus berada di masa mendatang (masa depan).", ephemeral=True)
+                    return await interaction.response.send_message(Msg.GOAL_END_DATE_PAST, ephemeral=True)
         except ValueError:
-            return await interaction.response.send_message("Input tidak valid. Harap gunakan jumlah jam atau tanggal dalam format YYYY-MM-DD.", ephemeral=True)
+            return await interaction.response.send_message(Msg.GOAL_INVALID_DATE, ephemeral=True)
 
         if start_date:
             try:
@@ -173,9 +174,9 @@ class GoalsCog(commands.Cog):
                 except ValueError:
                     start_date_dt = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
                 if start_date_dt > end_date_dt:
-                    return await interaction.response.send_message("Tanggal mulai harus sebelum tanggal berakhir.", ephemeral=True)
+                    return await interaction.response.send_message(Msg.GOAL_START_AFTER_END, ephemeral=True)
             except ValueError:
-                return await interaction.response.send_message("Input tidak valid. Harap gunakan tanggal dalam format YYYY-MM-DD atau YYYY-MM-DD HH:MM.", ephemeral=True)
+                return await interaction.response.send_message(Msg.GOAL_INVALID_START_DATE_FORMAT, ephemeral=True)
         else:
             start_date_dt = None
 
@@ -186,10 +187,10 @@ class GoalsCog(commands.Cog):
 
         unit_name = MEDIA_TYPES[media_type]['unit_name'] if goal_type == 'amount' else 'poin'
         timestamp = int(end_date_dt.timestamp())
-        
+
         embed = discord.Embed(title="Target Berhasil Dipasang!", color=discord.Color.green())
         embed.add_field(name="Tipe Media", value=media_type, inline=True)
-        
+
         goal_type_display = "Poin" if goal_type == "points" else "Jumlah (Amount)"
         embed.add_field(name="Tipe Target", value=goal_type_display, inline=True)
         embed.add_field(name="Nilai Target", value=f"{goal_value} {unit_name}", inline=True)
@@ -202,17 +203,18 @@ class GoalsCog(commands.Cog):
     @discord.app_commands.command(name='log_remove_goal', description='Hapus salah satu target belajarmu.')
     @discord.app_commands.describe(goal_entry='Pilih target belajar yang ingin kamu hapus.')
     @discord.app_commands.autocomplete(goal_entry=goal_undo_autocomplete)
+    @is_vip()
     async def log_remove_goal(self, interaction: discord.Interaction, goal_entry: str):
         """Slash command untuk membatalkan atau menghapus target belajar aktif milik pribadi."""
         if not goal_entry.isdigit():
-            return await interaction.response.send_message("Pilihan target tidak valid.", ephemeral=True)
+            return await interaction.response.send_message(Msg.GOAL_INVALID_CHOICE, ephemeral=True)
 
         goal_id = int(goal_entry)
         user_goals = await self.bot.GET(GET_USER_GOALS_QUERY, (interaction.user.id,))
         goal_ids = [goal[0] for goal in user_goals]
 
         if goal_id not in goal_ids:
-            return await interaction.response.send_message("Target yang dipilih tidak ada atau bukan milikmu.", ephemeral=True)
+            return await interaction.response.send_message(Msg.GOAL_NOT_OWNED, ephemeral=True)
 
         goal_to_remove = next(goal for goal in user_goals if goal[0] == goal_id)
         goal_type, goal_value, media_type = goal_to_remove[2], goal_to_remove[3], goal_to_remove[1]
@@ -220,17 +222,20 @@ class GoalsCog(commands.Cog):
 
         await self.bot.RUN(DELETE_GOAL_QUERY, (goal_id, interaction.user.id))
         goal_type_display = "Poin" if goal_type == "points" else "Jumlah"
-        await interaction.response.send_message(f"> {interaction.user.mention} Target `{goal_type_display}` sebesar `{goal_value} {unit_name}` untuk `{media_type}` telah berhasil dihapus.")
+        await interaction.response.send_message(
+            Msg.goal_removed(interaction.user.mention, goal_type_display, goal_value, unit_name, media_type)
+        )
 
     @discord.app_commands.command(name='log_view_goals', description='Lihat target belajarmu saat ini atau target milik warga lain.')
     @discord.app_commands.describe(member='Warga yang ingin kamu lihat target belajarnya (opsional).')
+    @is_vip()
     async def log_view_goals(self, interaction: discord.Interaction, member: Optional[discord.User] = None):
         """Slash command untuk memonitor daftar target belajar aktif di profil."""
         member = member or interaction.user
         user_goals = await self.bot.GET(GET_USER_GOALS_QUERY, (member.id,))
 
         if not user_goals:
-            return await interaction.response.send_message(f"> {member.display_name} tidak memiliki target belajar aktif saat ini.", ephemeral=True)
+            return await interaction.response.send_message(Msg.goal_no_active(member.display_name), ephemeral=True)
 
         embed = discord.Embed(title=f"Target Belajar {member.display_name}", color=discord.Color.blue())
         fields_added = 0
@@ -250,13 +255,14 @@ class GoalsCog(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @discord.app_commands.command(name='log_clear_goals', description='Bersihkan semua target belajar yang telah kedaluwarsa.')
+    @is_vip()
     async def log_clear_goals(self, interaction: discord.Interaction):
         """Slash command untuk membersihkan database dari riwayat target kustom yang telah kedaluwarsa."""
         current_time = discord.utils.utcnow().strftime('%Y-%m-%d %H:%M:%S')
         expired_goals = await self.bot.GET(GET_EXPIRED_GOALS_QUERY, (interaction.user.id, current_time))
 
         if not expired_goals:
-            return await interaction.response.send_message("> Kamu tidak memiliki target kedaluwarsa untuk dibersihkan.", ephemeral=True)
+            return await interaction.response.send_message(Msg.GOAL_NONE_EXPIRED, ephemeral=True)
 
         await self.bot.RUN(DELETE_ALL_EXPIRED_GOALS_QUERY, (interaction.user.id, current_time))
 

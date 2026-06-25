@@ -7,7 +7,7 @@ from typing import Optional
 from datetime import timedelta, datetime, timezone
 from discord.ext import commands
 
-from core.bot import KotabiBot
+from lib.bot import KotabiBot
 from lib.anilist_autocomplete import (
     CACHED_ANILIST_RESULTS_CREATE_TABLE_QUERY, CACHED_ANILIST_THUMBNAIL_QUERY, 
     CACHED_ANILIST_TITLE_QUERY, CREATE_ANILIST_FTS5_TABLE_QUERY, 
@@ -26,6 +26,8 @@ from lib.tmdb_autocomplete import (
 )
 from lib.media_types import MEDIA_TYPES, LOG_CHOICES
 from lib.immersion_helpers import is_valid_channel, get_achievement_reached_info, get_current_and_next_achievement
+from lib.checks import is_vip
+from lib.messages import Msg
 from .immersion_goals import check_goal_status
 from .username_fetcher import get_username_db
 
@@ -172,6 +174,7 @@ class ImmersionLog(commands.Cog):
     )
     @discord.app_commands.choices(media_type=LOG_CHOICES)
     @discord.app_commands.autocomplete(name=log_name_autocomplete)
+    @is_vip()
     async def log(
         self, 
         interaction: discord.Interaction, 
@@ -183,24 +186,24 @@ class ImmersionLog(commands.Cog):
     ):
         """Slash Command untuk mendaftarkan riwayat log immersion baru."""
         if not await is_valid_channel(interaction):
-            return await interaction.response.send_message("Anda hanya dapat menggunakan perintah ini di DM atau di saluran khusus pencatatan log.", ephemeral=True)
+            return await interaction.response.send_message(Msg.INVALID_CHANNEL, ephemeral=True)
 
         if not amount.isdigit():
-            return await interaction.response.send_message("Jumlah input harus berupa angka bulat positif yang valid.", ephemeral=True)
+            return await interaction.response.send_message(Msg.LOG_INVALID_AMOUNT, ephemeral=True)
         amount = int(amount)
         if amount < 0:
-            return await interaction.response.send_message("Jumlah input tidak boleh bernilai negatif.", ephemeral=True)
+            return await interaction.response.send_message(Msg.LOG_NEGATIVE_AMOUNT, ephemeral=True)
         allowed_limit = MEDIA_TYPES[media_type]['max_logged']
         if amount > allowed_limit:
-            return await interaction.response.send_message(f"Jumlah input tidak boleh melebihi {allowed_limit} untuk jenis media `{MEDIA_TYPES[media_type]['log_name']}`.", ephemeral=True)
+            return await interaction.response.send_message(Msg.log_amount_exceeded(allowed_limit, MEDIA_TYPES[media_type]['log_name']), ephemeral=True)
 
         if name and len(name) > 150:
-            return await interaction.response.send_message("Nama media terlalu panjang! Batas maksimal adalah 150 karakter.", ephemeral=True)
+            return await interaction.response.send_message(Msg.LOG_NAME_TOO_LONG, ephemeral=True)
         elif name:
             name = name.strip()
 
         if comment and len(comment) > 200:
-            return await interaction.response.send_message("Komentar terlalu panjang! Batas maksimal adalah 200 karakter.", ephemeral=True)
+            return await interaction.response.send_message(Msg.LOG_COMMENT_TOO_LONG, ephemeral=True)
         elif comment:
             comment = comment.strip()
 
@@ -214,12 +217,12 @@ class ImmersionLog(commands.Cog):
                     log_date_parsed = datetime.strptime(backfill_date, '%Y-%m-%d')
                 today = discord.utils.utcnow().date()
                 if log_date_parsed.date() > today:
-                    return await interaction.response.send_message("Anda tidak bisa mencatat aktivitas untuk tanggal di masa depan.", ephemeral=True)
+                    return await interaction.response.send_message(Msg.LOG_FUTURE_DATE, ephemeral=True)
                 if (today - log_date_parsed.date()).days > 7:
-                    return await interaction.response.send_message("Anda tidak bisa mencatat aktivitas yang sudah berlalu lebih dari 7 hari.", ephemeral=True)
+                    return await interaction.response.send_message(Msg.LOG_TOO_OLD, ephemeral=True)
                 log_date = log_date_parsed.strftime('%Y-%m-%d %H:%M:%S')
             except ValueError:
-                return await interaction.response.send_message("Format tanggal salah! Harap gunakan format YYYY-MM-DD atau YYYY-MM-DD HH:MM.", ephemeral=True)
+                return await interaction.response.send_message(Msg.LOG_INVALID_DATE_FORMAT, ephemeral=True)
 
         await interaction.response.defer()
 
@@ -267,7 +270,7 @@ class ImmersionLog(commands.Cog):
             else:
                 points_received_str = f"`+{points_received}` (X*{int(received_for_one)})"
 
-        embed_title = f"Berhasil Mencatat {amount} {MEDIA_TYPES[media_type]['unit_name']} {media_type} {random_guild_emoji}"
+        embed_title = Msg.log_success_title(amount, MEDIA_TYPES[media_type]['unit_name'], media_type) + f" {random_guild_emoji}"
 
         log_embed = discord.Embed(title=embed_title, color=discord.Color.random())
         log_embed.description = f"[{actual_title}]({source_url})" if source_url else actual_title
@@ -277,14 +280,16 @@ class ImmersionLog(commands.Cog):
         log_embed.add_field(name="Streak Belajar", value=f"{consecutive_days} hari beruntun")
         
         if achievement_reached and current_achievement:
-            log_embed.add_field(name="Pencapaian Baru Terbuka! 🎉", value=current_achievement["title"], inline=False)
+            log_embed.add_field(name=Msg.LOG_ACHIEVEMENT_UNLOCKED_FIELD, value=current_achievement["title"], inline=False)
         if next_achievement:
-            next_achievement_info = f"{next_achievement['title']} (`{int(total_achievement_points_after)}/{next_achievement['points']}` poin {achievement_group})"
-            log_embed.add_field(name="Pencapaian Berikutnya", value=next_achievement_info, inline=False)
-
+            next_achievement_info = Msg.log_next_achievement_info(
+                next_achievement['title'], total_achievement_points_after, next_achievement['points'], achievement_group
+            )
+            log_embed.add_field(name=Msg.LOG_NEXT_ACHIEVEMENT_FIELD, value=next_achievement_info, inline=False)
+        
         for i, goal_status in enumerate(goal_statuses, start=1):
             if len(log_embed.fields) >= 24:
-                log_embed.add_field(name="Perhatian", value="Anda telah mencapai jumlah bidang maksimal. Harap selesaikan atau bersihkan beberapa target Anda.", inline=False)
+                log_embed.add_field(name=Msg.LOG_FIELD_LIMIT_TITLE, value=Msg.LOG_FIELD_LIMIT_REACHED, inline=False)
                 break
             log_embed.add_field(name=f"Target {i}", value=goal_status, inline=False)
 
@@ -300,8 +305,8 @@ class ImmersionLog(commands.Cog):
             await logged_message.reply(f"> {comment}")
 
         if achievement_reached and current_achievement:
-            await logged_message.reply(f"🎉 **Pencapaian Terbuka!** 🎉\n\n**{current_achievement['title']}**\n\n{current_achievement['description']}")
-
+            await logged_message.reply(Msg.log_achievement_unlocked_reply(current_achievement['title'], current_achievement['description']))
+        
     async def get_consecutive_days_logged(self, user_id: int) -> int:
         """Menghitung jumlah hari beruntun (streak) pengguna melakukan pencatatan log."""
         result = await self.bot.GET(GET_CONSECUTIVE_DAYS_QUERY, (user_id,))
@@ -359,28 +364,35 @@ class ImmersionLog(commands.Cog):
     @discord.app_commands.command(name='log_undo', description='Membatalkan pencatatan log immersion sebelumnya!')
     @discord.app_commands.describe(log_entry='Pilih entri catatan log yang ingin dibatalkan.')
     @discord.app_commands.autocomplete(log_entry=log_undo_autocomplete)
+    @is_vip()
     async def log_undo(self, interaction: discord.Interaction, log_entry: str):
         """Memungkinkan pengguna membatalkan dan menghapus catatan log yang salah input."""
         if not await is_valid_channel(interaction):
-            return await interaction.response.send_message("Anda hanya dapat menggunakan perintah ini di DM atau di saluran khusus pencatatan log.", ephemeral=True)
+            return await interaction.response.send_message(Msg.INVALID_CHANNEL, ephemeral=True)
 
         if not log_entry.isdigit():
-            return await interaction.response.send_message("Pilihan catatan log tidak valid.", ephemeral=True)
+            return await interaction.response.send_message(Msg.LOG_INVALID_CHOICE, ephemeral=True)
 
         log_id = int(log_entry)
         user_logs = await self.bot.GET(GET_USER_LOGS_QUERY, (interaction.user.id,))
         log_ids = [log[0] for log in user_logs]
 
         if log_id not in log_ids:
-            return await interaction.response.send_message("Catatan log tersebut tidak ditemukan atau bukan milik Anda.", ephemeral=True)
+            return await interaction.response.send_message(Msg.LOG_NOT_FOUND, ephemeral=True)
 
         deleted_log_info = await self.bot.GET(GET_TO_BE_DELETED_LOG_QUERY, (interaction.user.id, log_id))
         _, media_type, media_name, amount_logged, log_date = deleted_log_info[0]
         log_date_str = datetime.strptime(log_date, '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%d')
         await self.bot.RUN(DELETE_LOG_QUERY, (log_id, interaction.user.id))
         await interaction.response.send_message(
-            f"> {interaction.user.mention} Log aktivitas Anda sebanyak `{amount_logged} {MEDIA_TYPES[media_type]['unit_name']}` "
-            f"dari `{media_type}` (`{media_name or 'Tanpa Nama'}`) pada tanggal `{log_date_str}` telah berhasil dihapus."
+            Msg.log_undo_success(
+                interaction.user.mention,
+                amount_logged,
+                MEDIA_TYPES[media_type]['unit_name'],
+                media_type,
+                media_name or 'Tanpa Nama',
+                log_date_str
+            )
         )
 
     async def get_total_points_for_achievement_group(self, user_id: int, achievement_group: str) -> float:
@@ -391,10 +403,11 @@ class ImmersionLog(commands.Cog):
         return 0.0
 
     @discord.app_commands.command(name='log_achievements', description='Menampilkan semua pencapaian lencana (achievements) Anda!')
+    @is_vip()
     async def log_achievements(self, interaction: discord.Interaction):
         """Membaca data poin lalu merender daftar milestone pencapaian yang telah diraih."""
         if not await is_valid_channel(interaction):
-            return await interaction.response.send_message("Anda hanya dapat menggunakan perintah ini di DM atau di saluran khusus pencatatan log.", ephemeral=True)
+            return await interaction.response.send_message(Msg.INVALID_CHANNEL, ephemeral=True)
 
         user_id = interaction.user.id
         achievements_list = []
@@ -417,7 +430,7 @@ class ImmersionLog(commands.Cog):
         if achievements_list:
             achievements_str = "\n".join(achievements_list)
         else:
-            achievements_str = "Belum ada pencapaian yang terbuka. Teruslah konsisten belajar!"
+            achievements_str = Msg.LOG_NO_ACHIEVEMENTS_YET
 
         embed = discord.Embed(
             title=f"Lencana Pencapaian {interaction.user.display_name}",
@@ -428,16 +441,17 @@ class ImmersionLog(commands.Cog):
 
     @discord.app_commands.command(name='log_export', description='Ekspor seluruh riwayat log aktivitas immersion Anda sebagai berkas CSV!')
     @discord.app_commands.describe(user='Pilih warga yang ingin diekspor riwayat lognya (Khusus Staf).')
+    @is_vip()
     async def log_export(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
         """Mengekspor riwayat log ke format .csv tabel data biner."""
         if not await is_valid_channel(interaction):
-            return await interaction.response.send_message("Anda hanya dapat menggunakan perintah ini di DM atau di saluran khusus pencatatan log.", ephemeral=True)
+            return await interaction.response.send_message(Msg.INVALID_CHANNEL, ephemeral=True)
 
         user_id = user.id if user else interaction.user.id
         user_logs = await self.bot.GET(GET_USER_LOGS_FOR_EXPORT_QUERY, (user_id,))
 
         if not user_logs:
-            return await interaction.response.send_message("Tidak ada riwayat log belajar yang dapat diekspor untuk warga tersebut.", ephemeral=True)
+            return await interaction.response.send_message(Msg.LOG_NO_HISTORY, ephemeral=True)
 
         csv_filename = f"immersion_logs_{user_id}.csv"
         csv_filepath = os.path.join("/tmp", csv_filename)
@@ -458,22 +472,23 @@ class ImmersionLog(commands.Cog):
                     'Tanggal Log': log[6]
                 })
 
-        await interaction.response.send_message("Berikut berkas riwayat log immersion yang berhasil diekspor:", file=discord.File(csv_filepath))
+        await interaction.response.send_message(Msg.LOG_EXPORT_CSV_READY, file=discord.File(csv_filepath))
         os.remove(csv_filepath)
 
     @discord.app_commands.command(name='logs', description='Ekspor riwayat log aktivitas Anda dalam bentuk dokumen teks (.txt)!')
     @discord.app_commands.describe(user='Pilih warga yang ingin diekspor riwayat lognya (Khusus Staf).')
+    @is_vip()
     async def logs(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
         """Mengekspor riwayat belajar pengguna ke format teks baris yang ringkas."""
         if not await is_valid_channel(interaction):
-            return await interaction.response.send_message("Anda hanya dapat menggunakan perintah ini di DM atau di saluran khusus pencatatan log.", ephemeral=True)
+            return await interaction.response.send_message(Msg.INVALID_CHANNEL, ephemeral=True)
 
         await interaction.response.defer()
         user_id = user.id if user else interaction.user.id
         user_logs = await self.bot.GET(GET_USER_LOGS_FOR_EXPORT_QUERY, (user_id,))
 
         if not user_logs:
-            return await interaction.followup.send("Tidak ada riwayat log belajar yang dapat diekspor untuk warga tersebut.", ephemeral=True)
+            return await interaction.followup.send(Msg.LOG_NO_HISTORY, ephemeral=True)
 
         log_filename = f"immersion_logs_{user_id}.txt"
         log_filepath = os.path.join("/tmp", log_filename)
@@ -490,7 +505,7 @@ class ImmersionLog(commands.Cog):
                 log_entry = f"{log_date}: {media_type} ({media_name}) -> {amount_logged} {unit_name} | {comment}\n"
                 log_file.write(log_entry)
 
-        await interaction.followup.send("Berikut berkas dokumen teks catatan log belajar Anda:", file=discord.File(log_filepath))
+        await interaction.followup.send(Msg.LOG_EXPORT_TXT_READY, file=discord.File(log_filepath))
         os.remove(log_filepath)
 
     @discord.app_commands.command(name='log_leaderboard', description='Tampilkan papan peringkat (leaderboard) keaktifan belajar bulan ini!')
@@ -499,10 +514,11 @@ class ImmersionLog(commands.Cog):
         month='Filter berdasarkan bulan tertentu (format YYYY-MM) atau pilih "ALL" untuk sepanjang masa (opsional).'
     )
     @discord.app_commands.choices(media_type=LOG_CHOICES)
+    @is_vip()
     async def log_leaderboard(self, interaction: discord.Interaction, media_type: Optional[str] = None, month: Optional[str] = None):
         """Menyusun data statistik poin server dan merender visualisasi peringkat keaktifan teratas."""
         if not await is_valid_channel(interaction):
-            return await interaction.response.send_message("Anda hanya dapat menggunakan perintah ini di DM atau di saluran khusus pencatatan log.", ephemeral=True)
+            return await interaction.response.send_message(Msg.INVALID_CHANNEL, ephemeral=True)
 
         await interaction.response.defer()
 
@@ -512,7 +528,7 @@ class ImmersionLog(commands.Cog):
             try:
                 month = datetime.strptime(month, '%Y-%m').strftime('%Y-%m')
             except ValueError:
-                return await interaction.followup.send("Format penulisan bulan salah! Harap gunakan format YYYY-MM.", ephemeral=True)
+                return await interaction.followup.send(Msg.LOG_INVALID_MONTH_FORMAT, ephemeral=True)
 
         leaderboard_data = await self.bot.GET(GET_MONTHLY_LEADERBOARD_QUERY, (month, month, media_type, media_type))
         user_data = await self.bot.GET(GET_USER_MONTHLY_POINTS_QUERY, (interaction.user.id, month, month, media_type, media_type))
@@ -567,7 +583,7 @@ class ImmersionLog(commands.Cog):
                         description += f" | {total_logged_humanized} {unit_name}"
                     description += "\n"
         else:
-            description = "Belum ada catatan log keaktifan untuk periode bulan ini. Jadilah yang pertama dengan mencatat log Anda!"
+            description = Msg.LOG_LEADERBOARD_EMPTY
 
         if not user_in_top_20 and user_data and user_data[0] and user_data[0][0]:
             user_points = human_readable_number(user_data[0][0])

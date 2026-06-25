@@ -1,6 +1,7 @@
 import asyncio
 from core.bot import KotabiBot
 from typing import Union, Optional
+from lib.messages import Msg
 
 import discord
 from discord.ext import commands
@@ -138,7 +139,7 @@ class Kneels(commands.Cog):
     async def kneel_leaderboard(self, interaction: discord.Interaction, guild_id: Optional[str] = None):
         """Menampilkan daftar warga yang paling banyak menerima sujud hormat."""
         if guild_id and not guild_id.isdigit():
-            await interaction.response.send_message("❌ ID Server tidak valid! Pastikan Anda memasukkan deretan angka.", ephemeral=True)
+            await interaction.response.send_message(Msg.KNEEL_INVALID_GUILD_ID, ephemeral=True)
             return
 
         # Kirim status berpikir yang ramah & tematik
@@ -148,7 +149,7 @@ class Kneels(commands.Cog):
         leaderboard_data = await self.bot.GET(GET_TOP_KNEELS_QUERY, (target_guild_id,))
         
         if not leaderboard_data:
-            await interaction.followup.send("❌ Tidak ditemukan data sujud hormat di kerajaan ini.")
+            await interaction.followup.send(Msg.KNEEL_NO_DATA)
             return
 
         # Resolusi emoji sujud kustom, fallback ke emoji standar jika tidak ada
@@ -157,7 +158,7 @@ class Kneels(commands.Cog):
             ikneel_emoji = "🧎"
 
         leaderboard_embed = discord.Embed(
-            title="🏆 Papan Peringkat Sujud Hormat (Berlutut)", 
+            title=Msg.KNEEL_LEADERBOARD_TITLE, 
             color=discord.Color.blurple()
         )
         
@@ -173,9 +174,9 @@ class Kneels(commands.Cog):
         user_kneels = await self.bot.GET_ONE(GET_USER_KNEELS_QUERY, (target_guild_id, interaction.user.id))
         try:
             total_personal = user_kneels[0] if user_kneels and user_kneels[0] is not None else 0
-            leaderboard_embed.add_field(name="🛡️ Sujud Hormat Anda", value=f"{total_personal} {ikneel_emoji}", inline=False)
+            leaderboard_embed.add_field(name=Msg.KNEEL_PERSONAL_FIELD, value=f"{total_personal} {ikneel_emoji}", inline=False)
         except (TypeError, IndexError):
-            leaderboard_embed.add_field(name="🛡️ Sujud Hormat Anda", value=f"0 {ikneel_emoji}", inline=False)
+            leaderboard_embed.add_field(name=Msg.KNEEL_PERSONAL_FIELD, value=f"0 {ikneel_emoji}", inline=False)
 
         await interaction.followup.send(embed=leaderboard_embed)
 

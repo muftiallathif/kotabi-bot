@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 
 # Impor pembaca konfigurasi Level 0
 from lib.config import get_role_id, get_channel_id
+from lib.checks import has_vip_role           # ← BARU: helper VIP check
+from lib.messages import Msg                   # ← BARU: teks terpusat
 from core.bot import KotabiBot
 
 _log = logging.getLogger("bot.gatekeeper")
@@ -258,6 +260,13 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
+
+        # ── BARU: cek VIP lewat has_vip_role() dari lib/checks.py ──
+        if not has_vip_role(interaction.user, interaction.guild_id):
+            await interaction.followup.send(Msg.GATEKEEPER_VIP_ONLY, ephemeral=True)
+            return
+        # ─────────────────────────────────────────────────────────────
+
         assert interaction.data is not None and "custom_id" in interaction.data, "Interaction data tidak valid."
         rank = self.item.values[0]
         guild_id = interaction.guild.id

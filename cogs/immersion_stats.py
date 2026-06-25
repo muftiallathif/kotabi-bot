@@ -12,10 +12,10 @@ from typing import Optional
 from datetime import datetime
 import asyncio
 
-# Impor pustaka pembantu dan konfigurasi inti
 from lib.media_types import MEDIA_TYPES, LOG_CHOICES
 from core.bot import KotabiBot
 from lib.immersion_helpers import is_valid_channel
+from lib.messages import Msg
 from .username_fetcher import get_username_db
 
 import matplotlib
@@ -34,27 +34,19 @@ GET_USER_LOGS_FOR_PERIOD_QUERY_BASE += " ORDER BY log_date;"
 
 
 def modify_cmap(cmap_name, zero_color="black", nan_color="black", truncate_high=0.7):
-    """
-    Memodifikasi colormap agar memiliki warna spesifik untuk nilai 0 dan NaN,
-    serta memotong jangkauan atas grafik agar warna tidak terlalu menyilaukan.
-    """
     base_cmap = colormaps[cmap_name]
     truncated_cmap = base_cmap(np.linspace(0, truncate_high, base_cmap.N))
     modified_cmap = mcolors.ListedColormap(truncated_cmap)
     modified_cmap.colors[0] = mcolors.to_rgba(zero_color)
-
-    # Menetapkan warna untuk data kosong (NaN)
     modified_cmap.set_bad(color=nan_color)
-
     return modified_cmap
 
 
 def embedded_info(df: pd.DataFrame) -> tuple:
-    """Menghitung rincian total akumulasi poin dan jumlah kuantitas belajar berdasarkan media."""
     points_total = df['points_received'].sum()
     breakdown = df.groupby('media_type').agg({'amount_logged': 'sum', 'points_received': 'sum'}).reset_index()
     breakdown['unit_name'] = breakdown['media_type'].apply(lambda x: MEDIA_TYPES[x]['unit_name'])
-    
+
     breakdown_str = "\n".join([
         f"**{row['media_type']}**: {row['amount_logged']:,} {row['unit_name']} → {round(row['points_received'], 2):,} poin"
         for _, row in breakdown.iterrows()
@@ -64,7 +56,6 @@ def embedded_info(df: pd.DataFrame) -> tuple:
 
 
 def set_plot_styles():
-    """Mengonfigurasi tema gelap (dark theme) yang estetik untuk grafik Matplotlib."""
     plt.rcParams.update({
         'axes.titlesize': 20,
         'axes.titleweight': 'bold',
@@ -82,13 +73,12 @@ def set_plot_styles():
 
 
 def process_bar_data(df: pd.DataFrame, from_date: datetime, to_date: datetime, immersion_type: str = None) -> tuple:
-    """Mengolah data log ke dalam rentang waktu tertentu untuk kebutuhan visualisasi diagram batang."""
     bar_df = df[from_date:to_date]
     if immersion_type:
         bar_df = bar_df.pivot_table(index=bar_df.index.date, columns='media_type', values='amount_logged', aggfunc='sum', fill_value=0)
     else:
         bar_df = bar_df.pivot_table(index=bar_df.index.date, columns='media_type', values='points_received', aggfunc='sum', fill_value=0)
-    
+
     bar_df.index = pd.DatetimeIndex(bar_df.index)
 
     time_frame = pd.date_range(bar_df.index.date.min(), to_date, freq='D')
@@ -97,7 +87,6 @@ def process_bar_data(df: pd.DataFrame, from_date: datetime, to_date: datetime, i
     if not isinstance(bar_df.index, pd.DatetimeIndex):
         bar_df.index = pd.to_datetime(bar_df.index)
 
-    # Menentukan frekuensi sampling grafik secara cerdas berdasarkan rentang tanggal
     if (pd.to_datetime(to_date) - pd.to_datetime(from_date)).days > 365 * 2:
         df_plot = bar_df.resample('QE').sum()
         x_lab = " (Tahun-Kuartal)"
@@ -119,7 +108,6 @@ def process_bar_data(df: pd.DataFrame, from_date: datetime, to_date: datetime, i
 
 
 def process_heatmap_data(df: pd.DataFrame, from_date: datetime, to_date: datetime) -> dict:
-    """Menyusun matriks harian per minggu (0-6) untuk digambar sebagai peta panas aktivitas belajar."""
     df = df.resample("D").sum()
     full_date_range = pd.date_range(start=datetime(df.index.year.min(), 1, 1), end=datetime(df.index.year.max(), 12, 31))
     df = df.reindex(full_date_range, fill_value=0)
@@ -131,14 +119,12 @@ def process_heatmap_data(df: pd.DataFrame, from_date: datetime, to_date: datetim
         year_begins_on = group.index.date.min().weekday()
         group["week"] = (group.index.dayofyear + year_begins_on - 1) // 7
         year_data = group.pivot_table(index="day", columns="week", values="points_received", aggfunc="sum", fill_value=np.nan)
-
         heatmap_data[year] = year_data
 
     return heatmap_data
 
 
 def generate_bar_chart(df: pd.DataFrame, from_date: datetime, to_date: datetime, immersion_type: str = None) -> io.BytesIO:
-    """Menggambar diagram batang kumulatif (stacked bar chart) poin harian."""
     set_plot_styles()
 
     df_plot, x_lab, date_labels = process_bar_data(df, from_date, to_date, immersion_type)
@@ -146,13 +132,13 @@ def generate_bar_chart(df: pd.DataFrame, from_date: datetime, to_date: datetime,
     fig, ax = plt.subplots(figsize=(16, 12))
     fig.patch.set_facecolor('#2c2c2d')
     df_plot.plot(kind='bar', stacked=True, ax=ax, color=[MEDIA_TYPES[col].get('color', 'gray') for col in df_plot.columns])
-    
+
     ax.set_title('Perolehan Poin Seiring Waktu' if not immersion_type else f"Perkembangan {MEDIA_TYPES[immersion_type]['log_name']} Seiring Waktu")
     ax.set_ylabel('Poin' if not immersion_type else f"Jumlah ({MEDIA_TYPES[immersion_type]['unit_name']})")
     ax.set_xlabel('Tanggal' + x_lab)
     ax.set_xticklabels(date_labels, rotation=45, ha='right')
     ax.grid(color='#8b8c8c', axis='y', linestyle='--', alpha=0.5)
-    
+
     for spline in ax.spines.values():
         if spline.spine_type != 'bottom':
             spline.set_visible(False)
@@ -166,7 +152,6 @@ def generate_bar_chart(df: pd.DataFrame, from_date: datetime, to_date: datetime,
 
 
 def generate_heatmap(df: pd.DataFrame, from_date: datetime, to_date: datetime, immersion_type) -> io.BytesIO:
-    """Menggambar peta panas keaktifan belajar (Github-style contribution heatmap)."""
     set_plot_styles()
     heatmap_data = process_heatmap_data(df, from_date, to_date)
     cmap = modify_cmap('Blues_r', zero_color="#222222", nan_color="#2c2c2d")
@@ -180,7 +165,6 @@ def generate_heatmap(df: pd.DataFrame, from_date: datetime, to_date: datetime, i
         axes = [axes]
 
     current_date = datetime.now().date()
-    # Penamaan label hari dalam Bahasa Indonesia untuk sumbu Y peta panas
     hari_indonesia = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"]
 
     for ax, (year, data) in zip(axes, heatmap_data.items()):
@@ -194,21 +178,17 @@ def generate_heatmap(df: pd.DataFrame, from_date: datetime, to_date: datetime, i
             yticklabels=hari_indonesia,
             ax=ax
         )
-        
+
         ax.set_title(f"Peta Keaktifan {MEDIA_TYPES[immersion_type]['Achievement_Group']} - {year}" if immersion_type else f"Peta Keaktifan Belajar (Immersion) - {year}")
         ax.set_xlabel("")
         ax.set_ylabel("")
-        
-        # Rotasi label hari sumbu Y agar tegak rapi
         ax.set_yticklabels(hari_indonesia, rotation=0)
-        
-        # Tambahkan legenda bar warna di bawah peta panas
+
         cbar = fig.colorbar(ax.collections[0], ax=ax, orientation='horizontal', fraction=0.08, pad=0.08, aspect=60)
         cbar.ax.yaxis.set_tick_params(color='white')
         cbar.outline.set_edgecolor('#222222')
         plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='white')
-        
-        # Gambar garis batas hitam tebal mengelilingi koordinat hari ini (real-time marker)
+
         if current_date.year == year:
             current_week = current_date.isocalendar().week - 1
             current_day = current_date.weekday()
@@ -216,7 +196,7 @@ def generate_heatmap(df: pd.DataFrame, from_date: datetime, to_date: datetime, i
                 (current_week, current_day),
                 1, 1,
                 linewidth=2.5,
-                edgecolor='#ffd700',  # Berwarna emas premium
+                edgecolor='#ffd700',
                 facecolor='none'
             )
             ax.add_patch(rect)
@@ -244,8 +224,7 @@ class ImmersionStats(commands.Cog):
             query = GET_USER_LOGS_FOR_PERIOD_QUERY_BASE
             params = (user_id, from_date.strftime('%Y-%m-%d %H:%M:%S'), to_date.strftime('%Y-%m-%d %H:%M:%S'))
 
-        user_logs = await self.bot.GET(query, params)
-        return user_logs
+        return await self.bot.GET(query, params)
 
     @discord.app_commands.command(name='log_stats', description='Tampilkan ikhtisar visual grafik statistik belajar (immersion) Anda!')
     @discord.app_commands.describe(
@@ -256,17 +235,17 @@ class ImmersionStats(commands.Cog):
     )
     @discord.app_commands.choices(immersion_type=LOG_CHOICES)
     async def log_stats(
-        self, 
-        interaction: discord.Interaction, 
-        user: Optional[discord.User] = None, 
-        from_date: Optional[str] = None, 
-        to_date: Optional[str] = None, 
+        self,
+        interaction: discord.Interaction,
+        user: Optional[discord.User] = None,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
         immersion_type: Optional[str] = None
     ):
         """Slash Command untuk memproses, menggambar, dan mengirim statistik profil belajar."""
         if not await is_valid_channel(interaction):
-            return await interaction.response.send_message("Anda hanya dapat menggunakan perintah ini di DM atau di saluran khusus pencatatan log.", ephemeral=True)
-        
+            return await interaction.response.send_message(Msg.INVALID_CHANNEL, ephemeral=True)
+
         await interaction.response.defer()
 
         user_id = user.id if user else interaction.user.id
@@ -281,27 +260,26 @@ class ImmersionStats(commands.Cog):
                 from_date_dt = now.replace(day=1, hour=0, minute=0, second=0)
                 start_of_year = datetime(now.year, 1, 1, 0, 0, 0)
         except ValueError:
-            return await interaction.followup.send("Format penulisan tanggal awal salah! Harap gunakan format YYYY-MM-DD.", ephemeral=True)
+            return await interaction.followup.send(Msg.LOG_INVALID_START_DATE, ephemeral=True)
 
         try:
             to_date_dt = datetime.strptime(to_date, '%Y-%m-%d') if to_date else datetime.now()
             to_date_dt = to_date_dt.replace(hour=23, minute=59, second=59)
         except ValueError:
-            return await interaction.followup.send("Format penulisan tanggal akhir salah! Harap gunakan format YYYY-MM-DD.", ephemeral=True)
+            return await interaction.followup.send(Msg.LOG_INVALID_END_DATE, ephemeral=True)
 
         user_logs = await self.get_user_logs(user_id, start_of_year, to_date_dt, immersion_type)
-        
+
         if not user_logs:
-            return await interaction.followup.send("Tidak ditemukan data log aktivitas belajar untuk periode waktu yang ditentukan.", ephemeral=True)
+            return await interaction.followup.send(Msg.LOG_NO_DATA_PERIOD, ephemeral=True)
 
         logs_df = pd.DataFrame(user_logs, columns=['media_type', 'amount_logged', 'points_received', 'log_date'])
         logs_df['log_date'] = pd.to_datetime(logs_df['log_date'])
         logs_df = logs_df.set_index('log_date')
 
         if logs_df[from_date_dt:to_date_dt].empty:
-            return await interaction.followup.send("Tidak ada riwayat aktivitas yang tercatat dalam rentang waktu tersebut.", ephemeral=True)
-            
-        # Gambar grafik di thread latar belakang agar Discord Gateway tidak mengalami lag/delay
+            return await interaction.followup.send(Msg.LOG_EMPTY_RANGE, ephemeral=True)
+
         figure_buffer_bar = await asyncio.to_thread(generate_bar_chart, logs_df, from_date_dt, to_date_dt, immersion_type)
         figure_buffer_heatmap = await asyncio.to_thread(generate_heatmap, logs_df, from_date_dt, to_date_dt, immersion_type)
 
@@ -312,17 +290,16 @@ class ImmersionStats(commands.Cog):
         embed.add_field(name="Warga", value=user_name, inline=True)
         embed.add_field(name="Rentang Waktu", value=timeframe_str, inline=True)
         embed.add_field(name="Total Poin", value=f"{points_total:,.2f} poin", inline=True)
-        
+
         if immersion_type:
             embed.add_field(name="Tipe Belajar", value=immersion_type, inline=True)
-        
+
         embed.add_field(name="Rincian Aktivitas", value=breakdown_str or "Belum ada riwayat aktivitas", inline=False)
 
         file_bar = discord.File(figure_buffer_bar, filename='bar_chart.png')
         file_heatmap = discord.File(figure_buffer_heatmap, filename='heatmap.png')
         embed.set_image(url="attachment://bar_chart.png")
 
-        # Kirimkan grafik batang bersanding dengan Ringkasan Embed, dilanjutkan peta panas
         await interaction.followup.send(file=file_bar, embed=embed)
         await interaction.followup.send(file=file_heatmap)
 

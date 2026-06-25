@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from core.bot import KotabiBot
 from lib.media_types import LOG_CHOICES, MEDIA_TYPES
 from lib.immersion_helpers import is_valid_channel
+from lib.messages import Msg
 from .username_fetcher import get_username_db
 
 GET_LOGS_FOR_RACE_QUERY = """
@@ -69,13 +70,10 @@ class ImmersionBarRaces(commands.Cog):
 
         value_col = 'points_received' if race_type == 'points' else 'amount_logged'
 
-        # Calculate cumulative sum for each user over time
         df['cumsum'] = df.groupby('username')[value_col].cumsum()
 
-        # Create a pivot table for the bar chart race
         pivot_df = df.pivot_table(index='log_date', columns='username', values='cumsum', aggfunc='max').ffill()
 
-        # Determine appropriate sampling frequency based on date range
         days_diff = (pd.to_datetime(end_date) - pd.to_datetime(start_date)).days
         if days_diff > 210:
             freq = '7D'
@@ -92,10 +90,8 @@ class ImmersionBarRaces(commands.Cog):
         else:
             freq = 'D'
 
-        # Resample data according to chosen frequency
         pivot_df = pivot_df.resample(freq).max().ffill().fillna(0)
 
-        # Generate chart title
         title = f"{'Points' if race_type == 'points' else 'Amount'} Race"
         if media_type and race_type == 'points':
             title += f" - {media_type}"
@@ -103,11 +99,9 @@ class ImmersionBarRaces(commands.Cog):
             title += f" - {MEDIA_TYPES[media_type]['log_name']}"
         title += f"\n{start_date.split()[0]} to {end_date.split()[0]}"
 
-        # Create temporary file for video output
         temp_file = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False)
         temp_file.close()
 
-        # Generate the bar chart race animation
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             bcr.bar_chart_race(
@@ -148,18 +142,18 @@ class ImmersionBarRaces(commands.Cog):
     @discord.app_commands.guild_only()
     @discord.app_commands.checks.dynamic_cooldown(admin_cooldown)
     async def log_race(
-        self, 
-        interaction: discord.Interaction, 
-        from_date: str, 
-        to_date: str, 
-        media_type: Optional[str] = None, 
+        self,
+        interaction: discord.Interaction,
+        from_date: str,
+        to_date: str,
+        media_type: Optional[str] = None,
         race_type: Optional[str] = 'points'
     ):
         try:
             start_date = datetime.strptime(from_date, '%Y-%m-%d')
             end_date = datetime.strptime(to_date, '%Y-%m-%d')
         except ValueError:
-            return await interaction.response.send_message("Invalid date format. Please use YYYY-MM-DD.", ephemeral=True)
+            return await interaction.response.send_message(Msg.LOG_INVALID_DATE_FORMAT, ephemeral=True)
 
         if end_date < start_date:
             return await interaction.response.send_message("End date must be after start date.", ephemeral=True)
@@ -170,12 +164,12 @@ class ImmersionBarRaces(commands.Cog):
         await interaction.response.defer()
 
         logs_data = await self.bot.GET(
-            GET_LOGS_FOR_RACE_QUERY, 
+            GET_LOGS_FOR_RACE_QUERY,
             (start_date.strftime('%Y-%m-%d 00:00:00'), end_date.strftime('%Y-%m-%d 23:59:59'), media_type, media_type)
         )
 
         if not logs_data:
-            return await interaction.followup.send("No logs found for the specified period.", ephemeral=True)
+            return await interaction.followup.send(Msg.LOG_NO_DATA_PERIOD, ephemeral=True)
 
         unique_user_ids = set(log[0] for log in logs_data)
         user_names = {}
