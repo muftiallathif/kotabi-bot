@@ -347,7 +347,7 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
             f"🏯 {interaction.user.mention}, selamat datang di bilik ujian kasta **{rank}**!\n"
             f"Untuk memulai ujian, silakan salin dan kirim perintah di bawah ini secara presisi tanpa ada karakter tambahan:"
         )
-        await quiz_thread.send(f"`{quiz_command}`")
+        await quiz_thread.send(quiz_command)
 
 
 class LevelUp(commands.Cog):
