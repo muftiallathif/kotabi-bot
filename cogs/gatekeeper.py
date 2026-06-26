@@ -331,6 +331,13 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
         if quiz_thread.locked or quiz_thread.archived:
             await quiz_thread.edit(locked=False, archived=False)
 
+        # Tambahkan Kotoba ke thread
+        kotoba = interaction.guild.get_member(KOTOBA_BOT_ID)
+        if not kotoba:
+            kotoba = await interaction.guild.fetch_member(KOTOBA_BOT_ID)
+        if kotoba and kotoba not in quiz_thread.members:
+            await quiz_thread.add_user(kotoba)
+
         # Tambahkan user ke thread ujian
         if interaction.user not in quiz_thread.members:
             await quiz_thread.add_user(interaction.user)
