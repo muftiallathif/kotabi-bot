@@ -153,6 +153,9 @@ class DailyQuestion(commands.Cog):
     @tasks.loop(minutes=1)
     async def check_daily_questions(self):
         """Mengecek setiap menit apakah sudah waktunya mengirim pertanyaan harian."""
+        now = utcnow()
+        if now.hour != 1 or now.minute != 0:  # 01:00 UTC = 08:00 WIB
+            return
         for guild_id, settings in daily_questions_settings.items():
             guild_id = int(guild_id)
             for channel_id in settings.get("channels", []):

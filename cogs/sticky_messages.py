@@ -32,6 +32,12 @@ FETCH_LOCK = asyncio.Lock()
 class StickyMessages(commands.Cog):
     def __init__(self, bot: KotabiBot):
         self.bot = bot
+        self._sticky_locks: dict[int, asyncio.Lock] = {}
+
+    def _get_lock(self, channel_id: int) -> asyncio.Lock:
+        if channel_id not in self._sticky_locks:
+            self._sticky_locks[channel_id] = asyncio.Lock()
+        return self._sticky_locks[channel_id]
 
     async def cog_load(self):
         await self.bot.RUN(CREATE_STICKY_MESSAGES_TABLE)
@@ -111,34 +117,35 @@ class StickyMessages(commands.Cog):
         if not sticky_data:
             return
 
-        original_message_id, old_sticky_id = sticky_data
+        async with self._get_lock(message.channel.id):
+            original_message_id, old_sticky_id = sticky_data
 
-        try:
-            if old_sticky_id:
-                old_sticky = await self._get_message(message.channel.id, old_sticky_id)
-                await old_sticky.delete()
-        except discord.NotFound:
-            pass
+            try:
+                if old_sticky_id:
+                    old_sticky = await self._get_message(message.channel.id, old_sticky_id)
+                    await old_sticky.delete()
+            except discord.NotFound:
+                pass
 
-        try:
-            original_message = await self._get_message(message.channel.id, original_message_id)
+            try:
+                original_message = await self._get_message(message.channel.id, original_message_id)
 
-            new_sticky = await message.channel.send(
-                f"📌 **Pesan Tetap:**\n\n{original_message.content}",
-                embed=original_message.embeds[0] if original_message.embeds else None,
-                files=[await attachment.to_file() for attachment in original_message.attachments]
-            )
+                new_sticky = await message.channel.send(
+                    f"📌 **Pesan Tetap:**\n\n{original_message.content}",
+                    embed=original_message.embeds[0] if original_message.embeds else None,
+                    files=[await attachment.to_file() for attachment in original_message.attachments]
+                )
 
-            await self.bot.RUN(UPDATE_STICKY_MESSAGE,
-                               (message.guild.id,
-                                message.channel.id,
-                                original_message_id,
-                                new_sticky.id))
+                await self.bot.RUN(UPDATE_STICKY_MESSAGE,
+                                   (message.guild.id,
+                                    message.channel.id,
+                                    original_message_id,
+                                    new_sticky.id))
 
-        except discord.NotFound:
-            await self.bot.RUN(DELETE_STICKY_MESSAGE,
-                               (message.guild.id,
-                                message.channel.id))
+            except discord.NotFound:
+                await self.bot.RUN(DELETE_STICKY_MESSAGE,
+                                   (message.guild.id,
+                                    message.channel.id))
 
 async def setup(bot):
     await bot.add_cog(StickyMessages(bot))

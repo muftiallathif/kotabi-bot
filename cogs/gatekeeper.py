@@ -271,7 +271,8 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
         await interaction.response.defer()
 
         # Cek VIP lewat has_vip_role() dari lib/checks.py
-        if not has_vip_role(interaction.user, interaction.guild_id):
+        member = interaction.guild.get_member(interaction.user.id)
+        if not member or not has_vip_role(member, interaction.guild_id):
             await interaction.followup.send(Msg.GATEKEEPER_VIP_ONLY, ephemeral=True)
             return
 

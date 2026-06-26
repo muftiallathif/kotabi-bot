@@ -37,7 +37,8 @@ class AutoReceive(commands.Cog):
 
         if join_log_channel:
             role_assign_channel_id = get_channel_id(guild_id, 'role_assign')
-            role_assign_mention = guild.get_channel(role_assign_channel_id).mention if role_assign_channel_id else '#role-assign'
+            role_assign_channel = guild.get_channel(role_assign_channel_id)
+            role_assign_mention = role_assign_channel.mention if role_assign_channel else '#role-assign'
             
             embed_welcome = discord.Embed(
                 title="⛵ Kapal Baru Berlabuh!",

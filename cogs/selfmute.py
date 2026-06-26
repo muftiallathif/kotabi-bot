@@ -216,7 +216,7 @@ class Selfmute(commands.Cog):
             mute_data = await self.bot.GET(GET_USER_MUTE_QUERY, (interaction.guild.id, interaction.user.id))
 
         if not mute_data and interaction.guild:
-            await self.perform_user_unmute(interaction.user, interaction.channel, mute_data)
+            await self.perform_user_unmute(interaction.user, announce_channel, mute_data_guild)
             await interaction.followup.send(Msg.MUTE_NOT_ACTIVE, ephemeral=True)
             return
 
