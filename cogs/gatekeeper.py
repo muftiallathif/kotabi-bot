@@ -330,16 +330,7 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
         if quiz_thread.locked or quiz_thread.archived:
             await quiz_thread.edit(locked=False, archived=False)
 
-        # Undang Bot Kotoba ke ruang ujian otomatis
-        kotoba_bot_user = interaction.guild.get_member(KOTOBA_BOT_ID)
-        if not kotoba_bot_user:
-            try:
-                kotoba_bot_user = await interaction.guild.fetch_member(KOTOBA_BOT_ID)
-            except discord.NotFound:
-                pass
-
-        if kotoba_bot_user and kotoba_bot_user not in quiz_thread.members:
-            await quiz_thread.add_user(kotoba_bot_user)
+        # Tambahkan user ke thread ujian
         if interaction.user not in quiz_thread.members:
             await quiz_thread.add_user(interaction.user)
 
