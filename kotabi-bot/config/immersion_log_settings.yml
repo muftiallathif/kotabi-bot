@@ -1,0 +1,159 @@
+points_multipliers:
+  Visual_Novel: 0.0028571428571429 # Karakter
+  Manga: 0.25                      # Halaman
+  Anime: 13.0                      # Episode
+  Book: 1.0                        # Halaman
+  Reading_Time: 0.67               # Menit
+  Listening_Time: 0.67             # Menit
+  Reading: 0.0028571428571429      # Karakter
+
+immersion_bot:
+  allowed_log_channels:
+    - 1516671526345113671  # immersion-log
+    - 1403191211652681841  # staff-chat (bypass admin)
+
+achievements:
+  Visual Novel:
+    - points: 1
+      title: "🌱 Pelajar Prolog"
+      description: "Langkah pertama Anda di dunia visual novel dimulai. Banyak cerita menunggu untuk dijelajahi, satu klik demi satu! 🌱"
+    - points: 250
+      title: "🍃 Penjelajah Jalur Umum"
+      description: "Perjalanan baru saja dimulai. Anda masih berada di jalur umum, tetapi jalan baru akan terbuka seiring pertumbuhan Anda! 🍃"
+    - points: 600
+      title: "🌿 Navigator Jalur"
+      description: "Anda mulai memahami hubungan antar karakter dan membuat pilihan yang tepat! 🌿"
+    - points: 1200
+      title: "🌸 Pengejar Romansa"
+      description: "Hubungan Anda mulai berkembang, pola dialog tidak lagi menyimpan rahasia bagi Anda! 🌸"
+    - points: 4200
+      title: "🌺 Penjaga Taman"
+      description: "Anda telah menelusuri berbagai jalur dan mulai memahami nuansa setiap karakter! 🌺"
+    - points: 22000
+      title: "💐 Penggemar Cerita"
+      description: "Setiap karya yang Anda selesaikan memperdalam pemahaman bahasa Anda! 💐"
+    - points: 40000
+      title: "🌳 Resi Narasi"
+      description: "Plot kompleks dan pengembangan karakter tidak lagi menjadi misteri bagi Anda! 🌳"
+    - points: 300000
+      title: "👑 Penjaga Kisah"
+      description: "Dengan segudang karya yang telah dibaca, Anda kini mampu membaca apa pun yang diinginkan! 👑"
+    - points: 600000
+      title: "🌍 Master Harem"
+      description: "Anda telah menaklukkan setiap dunia. Hanya sedikit yang bisa mencapai tingkat ini! 🌍"
+
+  Manga:
+    - points: 1
+      title: "📖 Pelajar Panel"
+      description: "Langkah pertama di dunia manga dimulai. Banyak cerita menunggu untuk dijelajahi, satu halaman demi satu! 📖"
+    - points: 150
+      title: "💬 Penjelajah Halaman"
+      description: "Halaman demi halaman, pemahaman Anda terus berkembang! 💬"
+    - points: 400
+      title: "📑 Navigator Bab"
+      description: "Setiap bab yang selesai Anda baca, kepercayaan diri Anda semakin meningkat! 📑"
+    - points: 750
+      title: "📘 Penjelajah Volume"
+      description: "Dulu Anda menghitung bab, sekarang Anda melahap volume sekaligus dalam sekejap! 📘"
+    - points: 3000
+      title: "📜 Sarjana Manga"
+      description: "Anda mulai merambah ke narasi yang lebih kompleks, membalik halaman dengan kecepatan tinggi! 📜"
+    - points: 15000
+      title: "📚 Penggemar Seri"
+      description: "Anda tidak lagi takut memulai seri panjang dan mulai menikmati plot yang rumit! 📚"
+    - points: 30000
+      title: "📗 Resi Manga"
+      description: "Bahkan halaman manga yang penuh dengan teks tidak lagi menjadi masalah, malah Anda menikmatinya! 📗"
+    - points: 225000
+      title: "👑 Penjaga Gelembung Kata"
+      description: "Dengan begitu banyak karya yang telah diselesaikan, Anda kini bisa membaca apa pun yang diinginkan! 👑"
+    - points: 450000
+      title: "🌍 Master Doujin"
+      description: "Dunia manga tidak lagi memiliki rahasia bagi Anda; Anda telah menjelajahi segalanya, bahkan karya paling langka sekalipun! 🌍"
+
+  Anime:
+    - points: 1
+      title: "📼 Pelajar Episode"
+      description: "Langkah pertama di dunia anime dimulai. Banyak cerita menunggu untuk dijelajahi, satu episode demi satu! 📼"
+    - points: 400
+      title: "📺 Penjelajah Seri"
+      description: "Anda telah menyelesaikan seri pertama dan mulai terbiasa dengan percakapannya! 📺"
+    - points: 1000
+      title: "🎬 Navigator Anime"
+      description: "Menonton berbagai anime membuat Anda semakin familier dengan banyak trope! 🎬"
+    - points: 2000
+      title: "🗨️ Spesialis Slice of Life"
+      description: "Anda telah memahami rahasia genre slice of life, mendengarkannya terasa begitu natural! 🗨️"
+    - points: 4000
+      title: "🌸 Penjelajah Genre"
+      description: "Anda mulai mencari genre baru yang lebih kompleks untuk ditonton! 🌸"
+    - points: 20000
+      title: "🍙 Penggemar Trope"
+      description: "Anda bisa mengenali tipe karakter hanya dari cara mereka berbicara! 🍙"
+    - points: 40000
+      title: "🐉 Resi Animasi"
+      description: "Gambar terus mengalir ke dalam otak Anda, Anda tidak takut menghadapi anime yang paling sulit sekalipun. 🐉"
+    - points: 200000
+      title: "👑 Penjaga Sakuga"
+      description: "Anda sudah lama meninggalkan subtitle; kini, animasi itu sendiri yang berbicara langsung kepada Anda! 👑"
+    - points: 400000
+      title: "🌍 Master Otaku"
+      description: "Anda telah melihat semuanya, namun tetap mencari sensasi baru. Pengetahuan Anda tidak terbatas, gunakanlah dengan bijak! 🌍"
+
+  Listening:
+    - points: 1
+      title: "🎵 Pelajar Mora"
+      description: "Langkah pertama di dunia listening dimulai, telinga Anda baru saja mulai dipanaskan! 🎵"
+    - points: 400
+      title: "🎶 Penjelajah Dialog"
+      description: "Dengan beberapa video yang sudah disimak, Anda mulai mengenali pola-pola percakapan! 🎶"
+    - points: 1000
+      title: "🎼 Navigator Audio"
+      description: "Anda semakin familier dengan bahasa, membedakan setiap suku kata dengan jelas. 🎼"
+    - points: 2000
+      title: "🈁 Pencari Kata"
+      description: "Anda mulai memahami banyak kata tanpa harus melihat subtitle! 🈁"
+    - points: 4000
+      title: "💬 Spesialis Percakapan"
+      description: "Anda mulai memahami bahasa lisan natural dengan sedikit usaha! 💬"
+    - points: 20000
+      title: "🎤 Penggemar Dialek"
+      description: "Dialek Tokyo tidak memiliki rahasia bagi Anda, dan Anda sedang menjelajahi dialek lainnya! 🎤"
+    - points: 40000
+      title: "🗫 Resi Percakapan"
+      description: "Anda dapat memahami percakapan antara beberapa penutur asli dengan mudah! 🗫"
+    - points: 200000
+      title: "👑 Penjaga Suara"
+      description: "Anda sudah lama meninggalkan subtitle; mendengarkan Bahasa Jepang kini terasa seperti sifat kedua! 👑"
+    - points: 400000
+      title: "🌍 Master Listening"
+      description: "Anda telah mencapai harmoni sempurna dengan Bahasa Jepang. Bahkan penutur tercepat tidak bisa menjatuhkan Anda! 🌍"
+
+  Reading:
+    - points: 1
+      title: "🈴 Pelajar Moji"
+      description: "Langkah pertama di dunia membaca dimulai. Banyak cerita menunggu untuk dijelajahi, satu karakter demi satu! 🈴"
+    - points: 120
+      title: "🔍 Penjelajah Halaman"
+      description: "Setiap halaman yang Anda baca, pemahaman Anda semakin berkembang! 🔍"
+    - points: 300
+      title: "📰 Penjelajah Bab"
+      description: "Anda telah menyelesaikan beberapa bab dan mulai mengikuti alur ceritanya! 📰"
+    - points: 600
+      title: "📘 Penjelajah Volume"
+      description: "Anda telah menyelesaikan buku pertama dan siap untuk memulai buku berikutnya! 📘"
+    - points: 2000
+      title: "📚 Spesialis Slice of Life"
+      description: "Membaca genre slice of life terasa natural bagi Anda, dan Anda mulai menjelajahi genre baru yang lebih kompleks! 📚"
+    - points: 10000
+      title: "📜 Penggemar Cerita"
+      description: "Dengan setiap penulis baru yang Anda baca, penguasaan bahasa Anda semakin meningkat! 📜"
+    - points: 20000
+      title: "📕 Resi Sastra"
+      description: "Keterampilan sastra Anda sangat luas, dan Anda tidak lagi takut menghadapi novel yang kompleks! 📕"
+    - points: 300000
+      title: "👑 Penjaga Naskah"
+      description: "Anda membaca seperti penutur asli; Anda bisa menikmati alur cerita yang paling rumit sekalipun! 👑"
+    - points: 600000
+      title: "🌍 Master Novel"
+      description: "Anda membaca gulungan naskah Jepang kuno untuk kesenangan; bagikan pengetahuan kanji Anda kepada dunia! 🌍"

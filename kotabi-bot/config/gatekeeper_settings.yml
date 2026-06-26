@@ -1,0 +1,283 @@
+rank_structure:
+  1403184187669872650: # Kotabi Japanese
+    - name: "【平民】Commoner"
+      require_role: null
+      combination_rank: false
+      font: null
+      font_size: 100
+      rank_to_get: 1515997732966502441
+      foreground: "#c92a2a"
+      effect: null
+      time_limit: 30000
+      decks: ["hiragana", "katakana"]
+      deck_range: null
+      score_limit: 20
+      max_missed: 10
+      command: "k!quiz hiragana+katakana 20 nd mmq=10 dauq=2 font=1 atl=30 color=#c92a2a size=100"
+      no_timeout: true
+      emoji: null
+
+    - name: "【騎士】Knight"
+      require_role: null
+      combination_rank: false
+      font: null
+      font_size: 100
+      rank_to_get: 1515998050336641117
+      foreground: "#c92a2a"
+      effect: null
+      time_limit: 16000
+      decks: ["hiragana", "katakana"]
+      deck_range: null
+      score_limit: 50
+      max_missed: 10
+      command: "k!quiz hiragana+katakana 50 hardcore nd mmq=10 dauq=1 font=5 atl=16 color=#c92a2a size=100"
+      no_timeout: false
+      emoji: null
+
+    - name: "【N5・従男爵】Baronet"
+      require_role: null
+      combination_rank: false
+      font: null
+      font_size: 100
+      rank_to_get: 1404219557333303419
+      foreground: "#c92a2a"
+      effect: "antiocr"
+      time_limit: 16000
+      decks: ["n5"]
+      deck_range: null
+      score_limit: 50
+      max_missed: 10
+      command: "k!quiz n5 50 hardcore nd mmq=10 dauq=1 font=5 atl=16 color=#c92a2a size=100 effect=antiocr"
+      no_timeout: false
+      emoji: null
+
+    - name: "【N5・男爵】Baron"
+      require_role: [1404219557333303419]
+      combination_rank: false
+      font: null
+      font_size: null
+      rank_to_get: 1515998513807495248
+      foreground: null
+      effect: null
+      time_limit: 60000
+      decks: ["gn5"]
+      deck_range: null
+      score_limit: 20
+      max_missed: 4
+      command: "k!quiz gn5 nd 20 mmq=4 atl=60"
+      no_timeout: false
+      emoji: null
+
+    - name: "【N4・従子爵】Junior Viscount"
+      require_role: null
+      combination_rank: false
+      font: null
+      font_size: 100
+      rank_to_get: 1515998740203180202
+      foreground: "#c92a2a"
+      effect: "antiocr"
+      time_limit: 16000
+      decks: ["n4"]
+      deck_range: null
+      score_limit: 50
+      max_missed: 10
+      command: "k!quiz n4 50 hardcore nd mmq=10 dauq=1 font=5 atl=16 color=#c92a2a size=100 effect=antiocr"
+      no_timeout: false
+      emoji: null
+
+    - name: "【N4・子爵】Viscount"
+      require_role: [1515998740203180202]
+      combination_rank: false
+      font: null
+      font_size: null
+      rank_to_get: 1404219560248348772
+      foreground: null
+      effect: null
+      time_limit: 60000
+      decks: ["gn4"]
+      deck_range: null
+      score_limit: 20
+      max_missed: 4
+      command: "k!quiz gn4 nd 20 mmq=4 atl=60"
+      no_timeout: false
+      emoji: null
+
+    - name: "【N3・従伯爵】Junior Count"
+      require_role: null
+      combination_rank: false
+      font: null
+      font_size: 100
+      rank_to_get: 1515999058915758090
+      foreground: "#c92a2a"
+      effect: "antiocr"
+      time_limit: 16000
+      decks: ["n3"]
+      deck_range: null
+      score_limit: 50
+      max_missed: 10
+      command: "k!quiz n3 50 hardcore nd mmq=10 dauq=1 font=5 atl=16 color=#c92a2a size=100 effect=antiocr"
+      no_timeout: false
+      emoji: null
+
+    - name: "【N3・伯爵】Count"
+      require_role: [1515999058915758090]
+      combination_rank: false
+      font: null
+      font_size: null
+      rank_to_get: 1404219539113246854
+      foreground: null
+      effect: null
+      time_limit: 60000
+      decks: ["gn3"]
+      deck_range: null
+      score_limit: 20
+      max_missed: 4
+      command: "k!quiz gn3 nd 20 mmq=4 atl=60"
+      no_timeout: false
+      emoji: null
+
+    - name: "【N2・従侯爵】Junior Marquess"
+      require_role: null
+      combination_rank: false
+      font: null
+      font_size: 100
+      rank_to_get: 1515999289388699779
+      foreground: "#ffda56"
+      effect: "antiocr"
+      time_limit: 16000
+      decks: ["n2"]
+      deck_range: null
+      score_limit: 50
+      max_missed: 10
+      command: "k!quiz n2 50 hardcore nd mmq=10 dauq=1 font=10 atl=16 color=#ffda56 size=100 effect=antiocr"
+      no_timeout: false
+      emoji: null
+
+    - name: "【N2・侯爵】Marquess"
+      require_role: [1515999289388699779]
+      combination_rank: false
+      font: null
+      font_size: null
+      rank_to_get: 1404219483727331379
+      foreground: null
+      effect: null
+      time_limit: 60000
+      decks: ["gn2"]
+      deck_range: null
+      score_limit: 20
+      max_missed: 4
+      command: "k!quiz gn2 nd 20 mmq=4 atl=60"
+      no_timeout: false
+      emoji: null
+
+    - name: "【N1・従公爵】Junior Duke"
+      require_role: null
+      combination_rank: false
+      font: null
+      font_size: 100
+      rank_to_get: 1515999731355222136
+      foreground: "#c92a2a"
+      effect: "antiocr"
+      time_limit: 16000
+      decks: ["n1"]
+      deck_range: null
+      score_limit: 50
+      max_missed: 10
+      command: "k!quiz n1 50 hardcore nd mmq=10 dauq=1 font=10 atl=16 color=#c92a2a size=100 effect=antiocr"
+      no_timeout: false
+      emoji: null
+
+    - name: "【N1・公爵】Duke"
+      require_role: [1515999731355222136]
+      combination_rank: false
+      font: null
+      font_size: null
+      rank_to_get: 1404219327833444362
+      foreground: null
+      effect: null
+      time_limit: 60000
+      decks: ["gn1"]
+      deck_range: null
+      score_limit: 20
+      max_missed: 4
+      command: "k!quiz gn1 nd 20 mmq=4 atl=60"
+      no_timeout: false
+      emoji: null
+
+    - name: "【選帝侯】Prince Elector"
+      require_role: [1404219327833444362]
+      combination_rank: false
+      font: null
+      font_size: 100
+      rank_to_get: 1516000372441874452
+      foreground: "#c92a2a"
+      effect: "antiocr"
+      time_limit: 16000
+      decks: ["yoji_2k", "yoji_j1k", "2k", "j1k", "insane"]
+      deck_range: null
+      score_limit: 50
+      max_missed: 10
+      command: "k!quiz yoji_2k+yoji_j1k+2k+j1k+insane 50 hardcore nd mmq=10 dauq=1 font=10 atl=16 color=#c92a2a size=100 effect=antiocr"
+      no_timeout: false
+      emoji: null
+
+    - name: "【国王】High King"
+      require_role: [1516000372441874452]
+      combination_rank: false
+      font: null
+      font_size: 100
+      rank_to_get: 1516000507414577173
+      foreground: "#c92a2a"
+      effect: "antiocr"
+      time_limit: 16000
+      decks: ["yoji_1k", "1k"]
+      deck_range: null
+      score_limit: 50
+      max_missed: 10
+      command: "k!quiz yoji_1k+1k 50 hardcore nd mmq=10 dauq=1 font=10 atl=16 color=#c92a2a size=100 effect=antiocr"
+      no_timeout: false
+      emoji: null
+
+    - name: "【覇王】Overlord"
+      require_role: [1516000507414577173]
+      combination_rank: false
+      font: null
+      font_size: 100
+      rank_to_get: 1516000520521650247
+      foreground: "#c92a2a"
+      effect: "antiocr"
+      time_limit: 16000
+      decks: ["imm_nandoku", "haado", "insane", "j1k"]
+      deck_range: null
+      score_limit: 50
+      max_missed: 10
+      command: "k!quiz imm_nandoku+haado+insane+j1k 50 hardcore nd mmq=10 dauq=1 font=10 atl=16 color=#c92a2a size=100 effect=antiocr"
+      no_timeout: false
+      emoji: null
+
+    - name: "【皇帝】Emperor"
+      require_role: [1516000520521650247]
+      combination_rank: false
+      font: null
+      font_size: 90
+      rank_to_get: 1516000555070394368
+      foreground: "#c92a2a"
+      effect: "antiocr"
+      time_limit: 16000
+      decks: ["n0", "cope", "kunyomi1kfull", "loli", "Myouji", "jpdefs", "places_full"]
+      deck_range: null
+      score_limit: 50
+      max_missed: 9
+      command: "k!quiz n0+cope+kunyomi1kfull+loli+Myouji+jpdefs+places_full 50 hardcore nd mmq=10 dauq=1 font=7 atl=16 color=#c92a2a size=90 effect=antiocr"
+      no_timeout: false
+      emoji: null
+
+rank_settings:
+  1403184187669872650:
+    announce_channel: 1515633144525754429
+    restricted_quiz_names: []
+    quiz_menu_message: |
+      Selamat datang di sistem peringkat kasta Kotabi Japanese! 🎌
+      Pilih ujian kuis di bawah ini untuk mendaftarkan ruang bilik ujian privat Anda. 頑張ってください！
+
+      ⚠️ Menu ini hanya berlaku di saluran ini (quiz-rank-up). Kuis di saluran quiz-public lainnya hanya untuk latihan atau duel dan TIDAK akan menaikkan peringkat kasta Anda.

@@ -1,0 +1,59 @@
+# ====================================================================
+# ALUR KERJA OTOMATISASI DEPLOYMENT KOTABI BOT (GitHub Actions)
+# ====================================================================
+
+name: Deploy Kotabi Japanese Bot
+
+# Memberikan izin kepada token GitHub untuk membuat rilis otomatis
+permissions:
+  contents: write
+
+# Pemicu jalannya otomatisasi
+on:
+  push:
+    branches:
+      - main              # Jalan otomatis jika ada update di branch main
+  workflow_dispatch:      # Mengaktifkan tombol jalankan manual di web GitHub
+
+jobs:
+  deploy:
+    runs-on: self-hosted  # Berjalan langsung di VPS Anda (self-hosted runner)
+
+    steps:
+      # 1. Menyalin berkas kode terbaru dari repositori GitHub ke VPS
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Menghentikan container lama agar tidak bentrok dengan yang baru
+      - name: Stop and remove existing container
+        run: |
+          docker stop discord-kotabi-bot-container || true
+          docker rm discord-kotabi-bot-container || true
+
+      # 3. Merakit ulang Docker Image dengan versi kode terbaru
+      - name: Build Docker image
+        run: |
+          docker build -t discord-kotabi-bot .
+
+      # 4. Menyalakan Container Docker Baru
+      # Di sini database lokal Anda di VPS (/usr/src/kotabi_bot/data) akan diikat (bind mount)
+      # ke dalam container agar data riwayat belajar user tidak terhapus saat dideploy ulang.
+      - name: Run Docker container
+        run: |
+          docker run -d \
+            --name discord-kotabi-bot-container \
+            --mount type=bind,source=/usr/src/kotabi_bot/data,target=/app/data \
+            --env TOKEN=${{ secrets.TOKEN }} \
+            --env COMMAND_PREFIX=${{ vars.COMMAND_PREFIX }} \
+            --env PATH_TO_DB=${{ vars.PATH_TO_DB }} \
+            --env AUTHORIZED_USERS=${{ vars.AUTHORIZED_USERS }} \
+            --env DEBUG_USER=${{ vars.DEBUG_USER }} \
+            --env TMDB_API_KEY=${{ secrets.TMDB_API_KEY }} \
+            --env OPENAI_KEY=${{ secrets.OPENAI_KEY }} \
+            --restart unless-stopped \
+            discord-kotabi-bot
+
+      # 5. Membersihkan sampah cetakan gambar Docker lama agar memori VPS hemat
+      - name: Clean up unused Docker images
+        run: |
+          docker image prune -f
