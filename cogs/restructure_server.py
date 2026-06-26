@@ -385,12 +385,12 @@ class RestructureServer(commands.Cog):
         self.bot = bot
 
     @discord.app_commands.command(
-    name="setup_structure",
-    description="Tata ulang kategori & channel sesuai blueprint, lalu terapkan ulang permission (Admin)."
+        name="structure_preview",
+        description="Pratinjau penataan kategori & channel tanpa mengubah apa pun (Admin)."
     )
     @discord.app_commands.guild_only()
     @discord.app_commands.default_permissions(administrator=True)
-    async def structure_preview(self, interaction: discord.Interaction):
+    async def structure_preview(self, interaction: discord.Interaction):    
         await interaction.response.defer(ephemeral=True)
 
         if not _is_authorized(interaction.user):
@@ -403,8 +403,8 @@ class RestructureServer(commands.Cog):
         await _send_paginated(interaction, logs, "🔍 Pratinjau Penataan Struktur")
 
     @discord.app_commands.command(
-        name="setup_structure",
-        description="Tata ulang kategori & posisi channel sesuai blueprint, lalu terapkan ulang semua permission (Khusus Admin)."
+    name="setup_structure",
+    description="Tata ulang kategori & channel sesuai blueprint, terapkan ulang permission (Admin)."
     )
     @discord.app_commands.guild_only()
     @discord.app_commands.default_permissions(administrator=True)
