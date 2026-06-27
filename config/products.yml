@@ -1,0 +1,149 @@
+# ============================================================
+# config/products.yml — Definisi Produk Kotabi Membership
+# ============================================================
+#
+# CARA KERJA:
+#   - File ini hanya dibaca saat USER MEMBUAT ORDER (/subscribe).
+#   - Setelah order dibuat, grant_payload di-snapshot ke database.
+#   - Approval TIDAK pernah membaca ulang file ini.
+#   - Menambah/mengubah produk di sini tidak mempengaruhi order lama.
+#
+# VERSIONING:
+#   - Ubah `version` setiap kali ada perubahan harga atau grant.
+#   - Format: 'v1', 'v2', dst.
+#
+# STRUKTUR GRANTS:
+#   grants.membership  → extend tier + expiry
+#   grants.point       → tambah poin kumulatif
+#
+# ============================================================
+
+products:
+
+  # ----------------------------------------------------------
+  # MEMBERSHIP DASAR
+  # ----------------------------------------------------------
+
+  traveler:
+    id: traveler
+    name: "【旅人】 Traveler"
+    version: v1
+    type: membership
+    price: 40000
+    quantity_label: "bulan"
+    min_quantity: 1
+    max_quantity: 12
+    grants:
+      membership:
+        tier: traveler
+        duration_days: 30
+      point:
+        amount: 1
+
+  companion:
+    id: companion
+    name: "【同胞】 Companion"
+    version: v1
+    type: membership
+    price: 80000
+    quantity_label: "bulan"
+    min_quantity: 1
+    max_quantity: 12
+    grants:
+      membership:
+        tier: companion
+        duration_days: 30
+      point:
+        amount: 2
+
+  patron:
+    id: patron
+    name: "【常連】 Patron"
+    version: v1
+    type: membership
+    price: 449000
+    quantity_label: null
+    min_quantity: 1
+    max_quantity: 1
+    grants:
+      membership:
+        tier: patron
+        lifetime: true
+      point:
+        amount: 30
+
+  # ----------------------------------------------------------
+  # KELAS INTENSIF
+  # Bukan tier tersendiri — memberikan grant Companion dengan
+  # durasi lebih panjang sesuai paket kelas.
+  # ----------------------------------------------------------
+
+  jlpt_n5:
+    id: jlpt_n5
+    name: "JLPT N5 Intensive"
+    version: v1
+    type: class
+    price: 400000
+    quantity_label: null
+    min_quantity: 1
+    max_quantity: 1
+    grants:
+      membership:
+        tier: companion
+        duration_days: 90
+      point:
+        amount: 2
+
+  jlpt_n4:
+    id: jlpt_n4
+    name: "JLPT N4 Intensive"
+    version: v1
+    type: class
+    price: 400000
+    quantity_label: null
+    min_quantity: 1
+    max_quantity: 1
+    grants:
+      membership:
+        tier: companion
+        duration_days: 90
+      point:
+        amount: 2
+
+  kaiwa:
+    id: kaiwa
+    name: "Kaiwa Intensive"
+    version: v1
+    type: class
+    price: 500000
+    quantity_label: null
+    min_quantity: 1
+    max_quantity: 1
+    grants:
+      membership:
+        tier: companion
+        duration_days: 120
+      point:
+        amount: 2
+
+  # ----------------------------------------------------------
+  # TRIAL — tidak tersedia lewat /subscribe
+  # Hanya bisa diberikan admin via /admin grant-trial
+  # ----------------------------------------------------------
+
+  trial:
+    id: trial
+    name: "【旅籠】 Trial Membership"
+    version: v1
+    type: membership
+    price: 0
+    subscribable: false
+    quantity_label: null
+    min_quantity: 1
+    max_quantity: 1
+    grants:
+      membership:
+        tier: trial
+        duration_days: 5
+      point:
+        amount: 0
