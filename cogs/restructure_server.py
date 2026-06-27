@@ -288,7 +288,8 @@ STRUCTURE_BLUEPRINT: list[tuple[str, list[str], str]] = [
     ], "voice"),
 
     ("STAFF", [
-        "staff-chat",
+    "staff-chat",
+    "order-review",
     ], "text"),
 ]
 

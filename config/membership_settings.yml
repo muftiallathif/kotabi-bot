@@ -40,6 +40,7 @@ membership:
     - 1517801149191819427    # Prime Minister
 
   announcement_channel_id: 1403696014585495622
+  order_review_channel_id: 1520559668185792533
   grace_period_days: 3
   trial_duration_days: 7
 
