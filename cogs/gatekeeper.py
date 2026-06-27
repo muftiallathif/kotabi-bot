@@ -261,7 +261,6 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
     @classmethod
     async def from_custom_id(cls, interaction: discord.Interaction, item, match: re.Match[str]) -> discord.ui.DynamicItem:
         guild_id = int(match.group("guild_id"))
-        # FIX BUG 3: nama cog harus persis sama dengan nama class yang didaftarkan
         levelup = interaction.client.get_cog("LevelUp")
         if not levelup:
             raise RuntimeError("Modul LevelUp tidak ditemukan aktif.")
@@ -280,10 +279,8 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
         rank = self.item.values[0]
         guild_id = interaction.guild.id
 
-        # FIX BUG 1: gunakan helper _get_rank_structure yang menangani int/str key
         rank_structure = _get_rank_structure(guild_id)
 
-        # FIX BUG 1+2: cari quiz_command dengan benar dan validasi sebelum lanjut
         quiz_command = None
         for quiz in rank_structure:
             if quiz["name"].lower() == rank.lower():
@@ -291,8 +288,7 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
                 break
 
         if not quiz_command:
-            _log.error(f"❌ quiz_command tidak ditemukan untuk rank '{rank}' di guild {guild_id}. "
-                       f"Pastikan rank_structure di gatekeeper_settings.yml menggunakan guild_id integer.")
+            _log.error(f"❌ quiz_command tidak ditemukan untuk rank '{rank}' di guild {guild_id}.")
             await interaction.followup.send(
                 f"❌ Perintah kuis untuk kasta **{rank}** tidak ditemukan di konfigurasi. "
                 f"Hubungi admin server.",
@@ -342,7 +338,6 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
         if interaction.user not in quiz_thread.members:
             await quiz_thread.add_user(interaction.user)
 
-        # FIX BUG 2: quiz_command sudah dipastikan tidak None di atas
         await quiz_thread.send(
             f"🏯 {interaction.user.mention}, selamat datang di bilik ujian kasta **{rank}**!\n"
             f"Untuk memulai ujian, silakan salin dan kirim perintah di bawah ini secara presisi tanpa ada karakter tambahan:"
@@ -473,16 +468,41 @@ class LevelUp(commands.Cog):
     async def get_corresponding_quiz_data(self, message: discord.Message, quiz_result: dict):
         """Mencocokkan data deck laporan Kotoba API dengan data kasta di setelan kerajaan."""
         rank_structure = _get_rank_structure(message.guild.id)
+
         if not quiz_result["decks"][0].get("shortName"):
+            _log.warning(
+                f"[get_corresponding_quiz_data] Quiz result dari guild {message.guild.id} "
+                f"tidak memiliki shortName di deck pertama. Raw decks: {quiz_result['decks']}"
+            )
             return None
+
         deck_names = [deck["shortName"] for deck in quiz_result["decks"]]
         index_specified = bool(quiz_result["decks"][0].get("startIndex"))
+
+        _log.info(
+            f"[get_corresponding_quiz_data] Mencari rank untuk deck_names={deck_names}, "
+            f"index_specified={index_specified}, guild={message.guild.id}"
+        )
 
         for rank in rank_structure:
             index_required = rank.get("deck_range", None) is not None
             rank_decks = set(rank["decks"]) if rank.get("decks") is not None else set()
+
+            _log.debug(
+                f"  Membandingkan dengan rank '{rank['name']}': "
+                f"rank_decks={rank_decks} vs api_decks={set(deck_names)}, "
+                f"index_required={index_required} vs index_specified={index_specified}"
+            )
+
             if rank_decks == set(deck_names) and index_required == index_specified:
+                _log.info(f"[get_corresponding_quiz_data] ✅ Match ditemukan: '{rank['name']}'")
                 return rank
+
+        _log.warning(
+            f"[get_corresponding_quiz_data] ❌ Tidak ada rank yang cocok untuk "
+            f"deck_names={deck_names}, index_specified={index_specified} di guild {message.guild.id}. "
+            f"Periksa apakah nama deck di gatekeeper_settings.yml sudah persis sama dengan yang dikembalikan API Kotoba."
+        )
         return None
 
     async def get_all_quiz_roles(self, guild: discord.Guild):
@@ -499,17 +519,38 @@ class LevelUp(commands.Cog):
     async def reward_user(self, member: discord.Member, quiz_data: dict):
         """Menyematkan kenaikan kasta baru kepada member dan mencatatnya ke database."""
         await self.bot.RUN(ADD_PASSED_QUIZ, (member.guild.id, member.id, quiz_data["name"]))
+
         if quiz_data.get("rank_to_get"):
             all_roles = await self.get_all_quiz_roles(member.guild)
             role_to_get = member.guild.get_role(quiz_data["rank_to_get"])
 
+            _log.info(
+                f"[reward_user] Member={member} ({member.id}), quiz='{quiz_data['name']}', "
+                f"rank_to_get ID={quiz_data['rank_to_get']}, resolved role={role_to_get}"
+            )
+
+            if role_to_get is None:
+                _log.error(
+                    f"[reward_user] ❌ Role ID {quiz_data['rank_to_get']} tidak dapat di-resolve di guild "
+                    f"{member.guild.id} ('{member.guild.name}'). "
+                    f"Kemungkinan role sudah dihapus atau ID di gatekeeper_settings.yml salah. "
+                    f"Role yang tersedia di guild: {[f'{r.name}:{r.id}' for r in member.guild.roles]}"
+                )
+                return None
+
             # Cabut semua peran kasta kuis lama agar kasta tetap rapi tunggal
             roles_to_remove = [r for r in all_roles if r in member.roles and r.id != quiz_data["rank_to_get"]]
+
+            _log.info(
+                f"[reward_user] Roles to remove: {[r.name for r in roles_to_remove]}, "
+                f"role to add: {role_to_get.name}"
+            )
+
             if roles_to_remove:
                 await member.remove_roles(*roles_to_remove)
 
-            if role_to_get:
-                await member.add_roles(role_to_get)
+            await member.add_roles(role_to_get)
+            _log.info(f"[reward_user] ✅ Berhasil memberikan role '{role_to_get.name}' ke {member}")
             return role_to_get
         else:
             await self.check_if_combination_rank_earned(member)
@@ -592,6 +633,8 @@ class LevelUp(commands.Cog):
         if not quiz_id:
             return
 
+        _log.info(f"[level_up_routine] Quiz ID ditemukan: {quiz_id}, guild={message.guild.id}")
+
         quiz_result = await extract_quiz_result_from_id(quiz_id)
         if not quiz_result:
             await message.channel.send(
@@ -606,11 +649,21 @@ class LevelUp(commands.Cog):
         member_id = int(quiz_result["participants"][0]["discordUser"]["id"])
         member = message.guild.get_member(member_id)
         if not member:
+            _log.warning(f"[level_up_routine] Member ID {member_id} tidak ditemukan di guild {message.guild.id}")
             return
 
         success, quiz_message = await verify_quiz_settings(quiz_data, quiz_result, member)
 
+        _log.info(
+            f"[level_up_routine] verify_quiz_settings → success={success}, "
+            f"member={member} ({member.id}), quiz='{quiz_data['name']}', message='{quiz_message}'"
+        )
+
         if await self.already_owns_higher_or_same_role(quiz_data["rank_to_get"], member):
+            _log.info(
+                f"[level_up_routine] Member {member} sudah memiliki role yang setara atau lebih tinggi "
+                f"dari rank_to_get ID={quiz_data['rank_to_get']}. Proses reward dilewati."
+            )
             return
 
         if success and quiz_data.get("require_role"):
