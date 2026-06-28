@@ -15,7 +15,7 @@ DEBUG_USER_ID: Optional[int] = int(os.getenv("DEBUG_USER", 0)) or None
 
 FILE_SCAN_INTERVAL = 3
 HEALTH_CHECK_INTERVAL = 60
-HEALTH_WARN_THRESHOLD = 30
+HEALTH_WARN_THRESHOLD = 120
 
 class Watchdog(commands.Cog):
     def __init__(self, bot: KotabiBot):

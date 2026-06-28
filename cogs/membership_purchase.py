@@ -103,7 +103,7 @@ def _build_order_embed(
         "pending":  discord.Color.yellow(),
         "approved": discord.Color.green(),
         "rejected": discord.Color.red(),
-        "cancelled": discord.Color.grayed(),
+        "cancelled": discord.Color.light_grey(),
     }
     status_map = {
         "pending":   "⏳ Menunggu Persetujuan",
@@ -594,7 +594,7 @@ class MembershipPurchase(commands.Cog):
                 dm_embed = discord.Embed(
                     title="🚫 Order Dibatalkan",
                     description=f"Order **{order.product_name}** kamu telah dibatalkan.",
-                    color=discord.Color.grayed(),
+                    color=discord.Color.light_grey(),
                 )
                 dm_embed.add_field(name="Order ID", value=f"#{order_id}", inline=True)
                 await _send_dm(order.user_id, self.bot, dm_embed)
