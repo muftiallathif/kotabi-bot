@@ -142,12 +142,12 @@ class MembershipService:
 
         # Hitung expiry baru
         if lifetime:
-            expires_at = None
+            expires_at = datetime(9999, 12, 31, 23, 59, 59)
             is_lifetime = True
         else:
             if existing and existing.is_lifetime:
-                # Jangan timpa expiry lifetime
-                expires_at = None
+                # Jangan timpa expiry lifetime — pakai sentinel yang sama
+                expires_at = datetime(9999, 12, 31, 23, 59, 59)
                 is_lifetime = True
             else:
                 base = max(

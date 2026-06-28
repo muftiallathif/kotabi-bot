@@ -68,7 +68,7 @@ ON CONFLICT (guild_id, user_id) DO UPDATE SET
 _SET_LIFETIME = """
 UPDATE memberships
 SET is_lifetime = 1,
-    expires_at  = NULL,
+    expires_at  = '9999-12-31 23:59:59',
     tier        = 'patron',
     active      = 1
 WHERE guild_id = ? AND user_id = ?;
