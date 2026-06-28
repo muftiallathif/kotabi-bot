@@ -140,7 +140,7 @@ class MembershipScheduler(commands.Cog):
                             f"telah otomatis dibatalkan karena tidak diproses selama "
                             f"**{PENDING_CANCEL_DAYS} hari**."
                         ),
-                        color=discord.Color.grayed(),
+                        color=discord.Color.light_grey()
                     )
                     dm_embed.add_field(
                         name="Info",

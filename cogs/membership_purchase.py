@@ -40,7 +40,8 @@ from lib.membership.models import Order
 from lib.membership.product_loader import ProductLoader
 from lib.membership.repository import MembershipRepository
 from lib.membership.role_resolver import RoleResolver
-from lib.membership.service import PATRON_POINT_THRESHOLD, MembershipService
+from lib.config import get_lifetime_threshold
+from lib.membership.service import MembershipService
 
 _log = logging.getLogger("bot.membership_purchase")
 
@@ -77,8 +78,9 @@ def _fmt_price(amount: int) -> str:
 
 
 def _fmt_progress(point_count: int) -> str:
-    remaining = max(0, PATRON_POINT_THRESHOLD - point_count)
-    return f"{point_count}/{PATRON_POINT_THRESHOLD} poin ({remaining} poin lagi)"
+    threshold = get_lifetime_threshold()
+    remaining = max(0, threshold - point_count)
+    return f"{point_count}/{threshold} poin ({remaining} poin lagi)"
 
 
 async def _send_dm(user_id: int, bot: KotabiBot, embed: discord.Embed) -> bool:
@@ -552,7 +554,7 @@ class MembershipPurchase(commands.Cog):
                         title="✅ Order Disetujui — LIFETIME 👑",
                         description=(
                             f"Order **{order.product_name}** kamu telah disetujui!\n\n"
-                            f"Selamat! Kamu telah mencapai **{PATRON_POINT_THRESHOLD} poin** "
+                            f"Selamat! Kamu telah mencapai **{get_lifetime_threshold()} poin** "
                             f"dan sekarang menjadi **Patron** selamanya! 🎉"
                         ),
                         color=discord.Color.gold(),

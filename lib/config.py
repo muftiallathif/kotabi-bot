@@ -143,7 +143,7 @@ def get_tier_info(tier_name: str) -> dict:
 def get_lifetime_threshold() -> int:
     """Mengambil jumlah poin untuk unlock Lifetime membership."""
     cfg = _load_membership_cfg()
-    return int(cfg.get("roles", {}).get("lifetime", {}).get("point_threshold", 26))
+    return int(cfg.get("roles", {}).get("lifetime", {}).get("point_threshold", 30))
 
 
 # ============================================================================

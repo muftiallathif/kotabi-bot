@@ -33,7 +33,7 @@ membership:
     lifetime:
       name: "【常連】 Patron"
       role_id: 1517718386002628608
-      point_threshold: 26
+      point_threshold: 30
 
   moderator_role_ids:
     - 1517801101959631009    # Royal Guard

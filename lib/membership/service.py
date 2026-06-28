@@ -36,11 +36,9 @@ from lib.membership.models import (
     MembershipRow,
 )
 from lib.membership.repository import MembershipRepository
+from lib.config import get_lifetime_threshold
 
 _log = logging.getLogger("bot.membership.service")
-
-# Threshold poin untuk auto Patron
-PATRON_POINT_THRESHOLD = 30
 
 # Tier hierarchy (untuk validasi downgrade)
 TIER_ORDER = ["trial", "traveler", "companion", "patron"]
@@ -126,6 +124,7 @@ class MembershipService:
         Return GrantResult untuk dipakai caller memberi tahu Discord.
         """
         now = datetime.utcnow()
+        threshold = get_lifetime_threshold()
 
         # Ambil state sebelum grant
         existing = await self.repo.get_membership(guild_id, user_id)
@@ -137,8 +136,7 @@ class MembershipService:
         if existing and existing.is_lifetime:
             point_after = existing.point_count  # frozen
         else:
-            point_after = min(point_before + point_amount, PATRON_POINT_THRESHOLD + 99)
-            # +99 headroom supaya tidak persis di threshold kalau ada edge case
+            point_after = min(point_before + point_amount, threshold + 99)
 
         # Hitung expiry baru
         if lifetime:
@@ -175,8 +173,8 @@ class MembershipService:
         if (
             not is_lifetime
             and not (existing and existing.is_lifetime)
-            and point_after >= PATRON_POINT_THRESHOLD
-        ):
+            and point_after >= threshold
+        ):    
             await self.repo.set_lifetime(guild_id, user_id)
             just_became_lifetime = True
             is_lifetime = True
@@ -200,7 +198,7 @@ class MembershipService:
                 point_after=point_after,
                 order_id=order_id,
                 actor=None,
-                reason=f"Reached {PATRON_POINT_THRESHOLD} points",
+                reason=f"Reached {threshold} points",
             ))
 
         # Tulis history untuk grant ini

@@ -28,6 +28,7 @@ from typing import Optional
 from lib.membership.models import HistoryEvent
 from lib.membership.repository import MembershipRepository
 from lib.membership.service import MembershipService
+from lib.config import get_lifetime_threshold
 
 _log = logging.getLogger("bot.grants.handlers.point")
 
@@ -76,10 +77,10 @@ class PointGrantHandler:
                 "changed":      False,
             }
 
-        from lib.membership.service import PATRON_POINT_THRESHOLD
+        threshold = get_lifetime_threshold()
 
         point_before = existing.point_count
-        point_after  = min(point_before + amount, PATRON_POINT_THRESHOLD + 99)
+        point_after  = min(point_before + amount, threshold + 99)
 
         await self.repo.set_point_count(guild_id, user_id, point_after)
 

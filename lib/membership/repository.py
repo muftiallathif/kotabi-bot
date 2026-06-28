@@ -46,7 +46,10 @@ INSERT INTO memberships (
 )
 VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
 ON CONFLICT (guild_id, user_id) DO UPDATE SET
-    tier        = excluded.tier,
+    tier        = CASE
+        WHEN memberships.is_lifetime = 1 THEN memberships.tier
+        ELSE excluded.tier
+    END,
     granted_at  = excluded.granted_at,
     expires_at  = CASE
         WHEN memberships.is_lifetime = 1 THEN memberships.expires_at

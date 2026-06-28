@@ -26,12 +26,12 @@ from discord.ext import commands, tasks
 from discord.utils import utcnow
 
 from core.bot import KotabiBot
+from lib.config import get_lifetime_threshold
 from lib.grants.engine import ApplyResult, GrantEngine
 from lib.membership.models import MembershipRow
 from lib.membership.product_loader import ProductLoader
 from lib.membership.role_resolver import RoleResolver
 from lib.membership.service import (
-    PATRON_POINT_THRESHOLD,
     MembershipService,
     get_current_trial_cycle,
 )
@@ -77,8 +77,9 @@ def _can_manage(member: discord.Member) -> bool:
 
 
 def _fmt_progress(point_count: int) -> str:
-    remaining = max(0, PATRON_POINT_THRESHOLD - point_count)
-    return f"{point_count}/{PATRON_POINT_THRESHOLD} poin ({remaining} poin lagi)"
+    threshold = get_lifetime_threshold()
+    remaining = max(0, threshold - point_count)
+    return f"{point_count}/{threshold} poin ({remaining} poin lagi)"
 
 
 async def _send_dm(user_id: int, bot: KotabiBot, embed: discord.Embed) -> bool:
@@ -122,13 +123,13 @@ def _build_grant_dm_embed(
         embed = discord.Embed(
             title="✅ Membership Granted — LIFETIME 👑",
             description=(
-                f"Selamat! Kamu telah mencapai **{PATRON_POINT_THRESHOLD} poin kumulatif** "
+                f"Selamat! Kamu telah mencapai **{get_lifetime_threshold()} poin kumulatif** "
                 f"dan sekarang menjadi **Patron** secara permanen.\n\n"
                 "Terima kasih atas dukunganmu! 🎉"
             ),
             color=discord.Color.gold(),
         )
-        embed.add_field(name="Progress Lifetime", value=f"{result.point_after}/{PATRON_POINT_THRESHOLD} poin ✅")
+        embed.add_field(name="Progress Lifetime", value=f"{result.point_after}/{get_lifetime_threshold()} poin ✅")
     elif result.is_lifetime:
         embed = discord.Embed(
             title="✅ Membership Granted — LIFETIME 👑",
@@ -263,7 +264,7 @@ class Membership(commands.Cog):
         # Reply ke admin
         reply = (
             f"✅ **{product.name}** granted → {user.mention}\n"
-            f"Progress Lifetime: **{result.point_after}/{PATRON_POINT_THRESHOLD} poin**"
+            f"Progress Lifetime: **{result.point_after}/{get_lifetime_threshold()} poin**"
         )
         if result.just_became_lifetime:
             reply += "\n🎉 User sekarang **LIFETIME MEMBER**!"
@@ -518,7 +519,7 @@ class Membership(commands.Cog):
 
         if row.is_lifetime:
             embed.add_field(name="Expires",           value="Tidak pernah ♾️",  inline=True)
-            embed.add_field(name="Progress Lifetime", value=f"{row.point_count}/{PATRON_POINT_THRESHOLD} ✅", inline=True)
+            embed.add_field(name="Progress Lifetime", value=f"{row.point_count}/{get_lifetime_threshold()} ✅", inline=True)
         else:
             if row.expires_at:
                 expires_ts = int(row.expires_at.timestamp())
