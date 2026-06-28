@@ -5,6 +5,9 @@ import yaml
 import asyncio
 from datetime import timedelta
 from discord.ext import commands, tasks
+import logging
+
+_log = logging.getLogger(__name__)
 
 THREAD_RESOLVER_SETTINGS_PATH = os.getenv("ALT_THREAD_RESOLVER_SETTINGS") or "config/thread_resolver_settings.yml"
 with open(THREAD_RESOLVER_SETTINGS_PATH, "r", encoding="utf-8") as f:
@@ -62,8 +65,20 @@ class Resolver(commands.Cog):
             return
         if thread.parent.id not in thread_resolver_settings[thread.guild.id]:
             return
-        while not thread.last_message_id:
+
+        # Bug fix: beri batas retry (maks ~30 detik) supaya tidak infinite loop
+        # kalau thread.last_message_id tidak pernah ter-populate pada objek ini.
+        max_attempts = 10
+        for _ in range(max_attempts):
+            if thread.last_message_id:
+                break
             await asyncio.sleep(3)
+        else:
+            _log.warning(
+                "Thread %s (%d) tidak mendapat last_message_id setelah %d detik, melanjutkan tanpa menunggu.",
+                thread.name, thread.id, max_attempts * 3
+            )
+
         if not thread.owner:
             return
         await thread.send(f'{thread.owner.mention} Harap gunakan perintah `/solved` jika masalah Anda sudah terselesaikan.')

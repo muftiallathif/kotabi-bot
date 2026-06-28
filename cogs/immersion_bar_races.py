@@ -69,9 +69,7 @@ class ImmersionBarRaces(commands.Cog):
         df['log_date'] = pd.to_datetime(df['log_date'], utc=True)
 
         value_col = 'points_received' if race_type == 'points' else 'amount_logged'
-
         df['cumsum'] = df.groupby('username')[value_col].cumsum()
-
         pivot_df = df.pivot_table(index='log_date', columns='username', values='cumsum', aggfunc='max').ffill()
 
         days_diff = (pd.to_datetime(end_date) - pd.to_datetime(start_date)).days
@@ -102,25 +100,29 @@ class ImmersionBarRaces(commands.Cog):
         temp_file = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False)
         temp_file.close()
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            bcr.bar_chart_race(
-                df=pivot_df,
-                filename=temp_file.name,
-                title=title,
-                n_bars=15,
-                filter_column_colors=True,
-                period_length=500,
-                steps_per_period=20,
-                period_fmt='%b %d, %Y'
-            )
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                bcr.bar_chart_race(
+                    df=pivot_df,
+                    filename=temp_file.name,
+                    title=title,
+                    n_bars=15,
+                    filter_column_colors=True,
+                    period_length=500,
+                    steps_per_period=20,
+                    period_fmt='%b %d, %Y'
+                )
 
-        with open(temp_file.name, 'rb') as f:
-            buffer = io.BytesIO(f.read())
-            buffer.seek(0)
+            with open(temp_file.name, 'rb') as f:
+                buffer = io.BytesIO(f.read())
+                buffer.seek(0)
 
-        os.unlink(temp_file.name)
-        return buffer
+            return buffer
+        finally:
+            # Selalu bersihkan file temp, baik sukses maupun gagal di tengah jalan.
+            if os.path.exists(temp_file.name):
+                os.unlink(temp_file.name)
 
     @discord.app_commands.command(
         name='log_race',

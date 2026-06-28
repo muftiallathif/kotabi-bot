@@ -1,10 +1,13 @@
 import asyncio
+import logging
 from core.bot import KotabiBot
 from typing import Union, Optional
 from lib.messages import Msg
 
 import discord
 from discord.ext import commands
+
+_log = logging.getLogger(__name__)
 
 CREATE_KNEELS_TABLE = """
 CREATE TABLE IF NOT EXISTS kneels (
@@ -82,16 +85,23 @@ class Kneels(commands.Cog):
     async def update_kneel_score(self, payload: discord.RawReactionActionEvent):
         async with FETCH_LOCK:
             await asyncio.sleep(1)
-            message = await _get_message(self.bot, payload.channel_id, payload.message_id)
+            try:
+                message = await _get_message(self.bot, payload.channel_id, payload.message_id)
+            except discord.NotFound:
+                _log.debug(
+                    "Pesan %d di channel %d sudah dihapus, kneel score dilewati.",
+                    payload.message_id, payload.channel_id
+                )
+                return
 
             # Hitung total reaksi sujud kecuali dari penulis pesan itu sendiri
             kneel_count = len([
-                reaction for reaction in message.reactions 
+                reaction for reaction in message.reactions
                 if await is_kneel_emoji(reaction.emoji) and message.author.id != payload.user_id
             ])
 
             await self.bot.RUN(
-                UPDATE_KNEEL_SCORE_QUERY, 
+                UPDATE_KNEEL_SCORE_QUERY,
                 (message.guild.id, message.id, message.author.id, kneel_count, message.author.display_name)
             )
 

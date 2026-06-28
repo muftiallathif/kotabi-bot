@@ -299,9 +299,8 @@ class Membership(commands.Cog):
                 actor=interaction.user.id,
             )
 
-        await _apply_discord_role(interaction.guild, user.id, result if hasattr(result, 'tier') else None)
-
         # Perlu build ApplyResult sederhana untuk apply_discord_role
+        # Bug fix: hanya satu kali apply role, lewat ApplyResult yang dibangun bersih.
         from lib.grants.engine import ApplyResult as AR
         ar = AR()
         ar.membership = result

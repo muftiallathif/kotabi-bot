@@ -72,11 +72,12 @@ class Msg:
     LOG_EXPORT_TXT_READY    = "Berikut berkas dokumen teks catatan log belajar Anda:"
     LOG_LEADERBOARD_EMPTY   = "Belum ada catatan log keaktifan untuk periode bulan ini. Jadilah yang pertama dengan mencatat log Anda!"
 
-    # --- Goal ---
+# --- Goal ---
     GOAL_INVALID_START_DATE_FORMAT = "Input tidak valid. Harap gunakan tanggal dalam format YYYY-MM-DD atau YYYY-MM-DD HH:MM."
     GOAL_END_DATE_PAST   = "Tanggal berakhir harus berada di masa mendatang (masa depan)."
     GOAL_START_AFTER_END = "Tanggal mulai harus sebelum tanggal berakhir."
     GOAL_INVALID_DATE    = "Input tidak valid. Harap gunakan jumlah jam atau tanggal dalam format YYYY-MM-DD."
+    GOAL_INVALID_VALUE   = "❌ Nilai target harus berupa angka positif lebih dari 0."
     GOAL_INVALID_CHOICE  = "Pilihan target tidak valid."
     GOAL_NOT_OWNED       = "Target yang dipilih tidak ada atau bukan milikmu."
     GOAL_NONE_EXPIRED    = "> Kamu tidak memiliki target kedaluwarsa untuk dibersihkan."

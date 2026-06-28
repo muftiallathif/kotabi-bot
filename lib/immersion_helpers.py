@@ -1,18 +1,12 @@
 import discord
-import os
-import yaml
 
-from lib.media_types import MEDIA_TYPES
-
-IMMERSION_LOG_SETTINGS = os.getenv("IMMERSION_LOG_SETTINGS") or "config/immersion_log_settings.yml"
-with open(IMMERSION_LOG_SETTINGS, "r", encoding="utf-8") as f:
-    immersion_log_settings = yaml.safe_load(f)
+from lib.media_types import immersion_log_settings
 
 
 async def is_valid_channel(interaction: discord.Interaction) -> bool:
     if interaction.guild and interaction.user.guild_permissions.administrator:
         return True
-    if interaction.channel.id in immersion_log_settings['immersion_bot']['allowed_log_channels']:
+    if interaction.channel.id in immersion_log_settings.get('immersion_bot', {}).get('allowed_log_channels', []):
         return True
     if not interaction.user.dm_channel:
         await interaction.client.create_dm(interaction.user)
@@ -22,7 +16,7 @@ async def is_valid_channel(interaction: discord.Interaction) -> bool:
 
 
 async def get_achievement_reached_info(achievement_group: str, points_before: int, points_after: int):
-    achievement_group_settings = immersion_log_settings['achievements'][achievement_group]
+    achievement_group_settings = immersion_log_settings.get('achievements', {}).get(achievement_group, [])
     current_achievement = None
     next_achievement = None
     achievement_reached = False
@@ -41,7 +35,7 @@ async def get_achievement_reached_info(achievement_group: str, points_before: in
 
 
 async def get_current_and_next_achievement(achievement_group: str, points: int):
-    achievement_group_settings = immersion_log_settings['achievements'][achievement_group]
+    achievement_group_settings = immersion_log_settings.get('achievements', {}).get(achievement_group, [])
     current_achievement = None
     next_achievement = None
 

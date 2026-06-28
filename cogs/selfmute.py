@@ -215,25 +215,27 @@ class Selfmute(commands.Cog):
         else:
             mute_data = await self.bot.GET(GET_USER_MUTE_QUERY, (interaction.guild.id, interaction.user.id))
 
-        if not mute_data and interaction.guild:
-            await self.perform_user_unmute(interaction.user, announce_channel, mute_data_guild)
+        # Bug fix #3: cabang ini sekarang menangani SEMUA kasus "tidak ada mute aktif",
+        # baik dipanggil dari guild maupun dari DM — jadi selalu ada followup.send.
+        if not mute_data:
             await interaction.followup.send(Msg.MUTE_NOT_ACTIVE, ephemeral=True)
             return
 
         for mute_data_guild in mute_data:
             guild_id, user_id, mute_role_id, role_ids_to_restore, unmute_time = mute_data_guild
             mute_guild = self.bot.get_guild(guild_id)
-            unmute_time = datetime.strptime(unmute_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            unmute_time_dt = datetime.strptime(unmute_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
 
-            if unmute_time > discord.utils.utcnow():
+            if unmute_time_dt > discord.utils.utcnow():
                 await interaction.followup.send(
-                    Msg.mute_status(mute_guild.name, int(unmute_time.timestamp())),
+                    Msg.mute_status(mute_guild.name, int(unmute_time_dt.timestamp())),
                     ephemeral=True
                 )
             else:
                 announce_channel_id = selfmute_settings.get(guild_id, {}).get("announce_channel")
-                announce_channel = mute_guild.get_channel(announce_channel_id)
-                await self.perform_user_unmute(interaction.user, announce_channel, mute_data)
+                announce_channel = mute_guild.get_channel(announce_channel_id) if mute_guild else None
+                # Bug fix #2: pakai mute_data_guild (baris ini saja), bukan mute_data (semua baris)
+                await self.perform_user_unmute(interaction.user, announce_channel, mute_data_guild)
                 await interaction.followup.send(Msg.MUTE_ENDED, ephemeral=True)
             
 
