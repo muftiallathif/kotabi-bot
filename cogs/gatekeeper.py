@@ -344,6 +344,22 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
         )
         await quiz_thread.send(quiz_command)
 
+        jump_view = discord.ui.View()
+        jump_view.add_item(
+            discord.ui.Button(
+                label="Masuk ke Bilik Ujian",
+                style=discord.ButtonStyle.link,
+                url=quiz_thread.jump_url,
+                emoji="🏯"
+            )
+        )
+
+        await interaction.followup.send(
+            f"✅ Bilik ujian kasta **{rank}** sudah siap! Silakan klik tombol di bawah untuk masuk.",
+            view=jump_view,
+            ephemeral=True
+        )
+
 
 class LevelUp(commands.Cog):
     def __init__(self, bot: KotabiBot):
