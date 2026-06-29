@@ -15,6 +15,8 @@ from lib.config import get_role_id, get_channel_id
 from lib.checks import has_vip_role           # ← BARU: helper VIP check
 from lib.messages import Msg                   # ← BARU: teks terpusat
 from core.bot import KotabiBot
+from lib.journey.service import JourneyService
+from lib.journey.models import NextActionType
 
 _log = logging.getLogger("bot.gatekeeper")
 
@@ -200,18 +202,49 @@ kotoba_request_lock = asyncio.Lock()
 thread_deletion_lock = asyncio.Lock()
 
 
-async def extract_quiz_result_from_id(quiz_id):
-    """Menghubungi web API Kotoba secara asinkron untuk mengambil detail laporan kuis."""
+async def extract_quiz_result_from_id(quiz_id: str, max_retries: int = 3):
+    """
+    Ambil hasil kuis dari Kotoba API dengan retry backoff.
+    Menggantikan versi lama yang tidak ada retry.
+    """
     jsonurl = f"https://kotobaweb.com/api/game_reports/{quiz_id}"
-    async with kotoba_request_lock:
+    last_error = None
+ 
+    for attempt in range(max_retries):
+        if attempt > 0:
+            wait = 2 ** attempt  # 2s, 4s
+            _log.info("[kotoba_api] Retry %d/%d untuk quiz_id %s (tunggu %ds)",
+                      attempt, max_retries - 1, quiz_id, wait)
+            await asyncio.sleep(wait)
+ 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(jsonurl) as resp:
+                async with session.get(jsonurl, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status == 200:
                         return await resp.json()
+                    elif resp.status == 404:
+                        # Quiz tidak ditemukan — tidak perlu retry
+                        _log.warning("[kotoba_api] Quiz ID %s tidak ditemukan (404)", quiz_id)
+                        return None
+                    elif resp.status == 429:
+                        # Rate limit — tunggu lebih lama
+                        retry_after = int(resp.headers.get("Retry-After", 60))
+                        _log.warning("[kotoba_api] Rate limited, tunggu %ds", retry_after)
+                        await asyncio.sleep(retry_after)
+                        last_error = f"Rate limited ({retry_after}s)"
+                    else:
+                        last_error = f"HTTP {resp.status}"
+                        _log.warning("[kotoba_api] Unexpected status %s untuk quiz_id %s",
+                                     resp.status, quiz_id)
+        except asyncio.TimeoutError:
+            last_error = "Timeout"
+            _log.warning("[kotoba_api] Timeout untuk quiz_id %s (attempt %d)", quiz_id, attempt + 1)
         except Exception as e:
-            _log.warning(f"⚠️ Gagal terhubung ke Kotoba API untuk ID kuis {quiz_id}: {e}")
-            return None
+            last_error = str(e)
+            _log.warning("[kotoba_api] Error untuk quiz_id %s: %s", quiz_id, e)
+ 
+    _log.error("[kotoba_api] Semua %d retry gagal untuk quiz_id %s. Error terakhir: %s",
+               max_retries, quiz_id, last_error)
     return None
 
 
@@ -633,84 +666,164 @@ class LevelUp(commands.Cog):
         """Pintu utama pemroses pesan untuk menyaring laporan kuis dari Bot Kotoba."""
         if message.author == self.bot.user:
             return
-
         if not message.guild:
             return
-
-        # Hanya duga jika pesan dikirim Kotoba atau berisi pemicu k!q
         if not message.author.id == KOTOBA_BOT_ID and "k!q" not in message.content.lower():
             return
-
+ 
         is_valid_command = await self.is_command_input_valid(message)
         if not is_valid_command:
             return
-
+ 
         quiz_id = await get_quiz_id(message)
         if not quiz_id:
             return
-
-        _log.info(f"[level_up_routine] Quiz ID ditemukan: {quiz_id}, guild={message.guild.id}")
-
-        quiz_result = await extract_quiz_result_from_id(quiz_id)
-        if not quiz_result:
-            await message.channel.send(
-                f"⚠️ {message.author.mention} Gagal mengambil hasil laporan dari Kotoba API. Jika Anda merasa lulus kuis, silakan hubungi Staf Kerajaan."
-            )
-            return
-
-        quiz_data = await self.get_corresponding_quiz_data(message, quiz_result)
-        if not quiz_data:
-            return
-
-        member_id = int(quiz_result["participants"][0]["discordUser"]["id"])
-        member = message.guild.get_member(member_id)
-        if not member:
-            _log.warning(f"[level_up_routine] Member ID {member_id} tidak ditemukan di guild {message.guild.id}")
-            return
-
-        success, quiz_message = await verify_quiz_settings(quiz_data, quiz_result, member)
-
-        _log.info(
-            f"[level_up_routine] verify_quiz_settings → success={success}, "
-            f"member={member} ({member.id}), quiz='{quiz_data['name']}', message='{quiz_message}'"
+ 
+        _log.info("[level_up_routine] Quiz ID ditemukan: %s, guild=%s", quiz_id, message.guild.id)
+ 
+        # ── PROCESSING FEEDBACK ──────────────────────────────────
+        # User tahu bot sedang bekerja, bukan diam
+        processing_msg = await message.channel.send(
+            f"⚔️ Memverifikasi hasil ujian... harap tunggu sebentar."
         )
-
-        if await self.already_owns_higher_or_same_role(quiz_data["rank_to_get"], member):
+ 
+        try:
+            # Step 1: Ambil hasil dari API
+            await processing_msg.edit(content="📥 Mengambil data hasil dari Kotoba...")
+            quiz_result = await extract_quiz_result_from_id(quiz_id)
+ 
+            if not quiz_result:
+                await processing_msg.edit(
+                    content=(
+                        f"⚠️ Gagal mengambil hasil laporan dari Kotoba API setelah beberapa percobaan.\n"
+                        f"Jika kamu merasa lulus kuis, silakan hubungi Staf Kerajaan dan sertakan "
+                        f"screenshot hasil kuismu."
+                    )
+                )
+                return
+ 
+            # Step 2: Cocokkan dengan konfigurasi kasta
+            await processing_msg.edit(content="🔍 Mencocokkan dengan konfigurasi kasta...")
+            quiz_data = await self.get_corresponding_quiz_data(message, quiz_result)
+            if not quiz_data:
+                await processing_msg.delete()
+                return
+ 
+            # Step 3: Identifikasi member
+            member_id = int(quiz_result["participants"][0]["discordUser"]["id"])
+            member = message.guild.get_member(member_id)
+            if not member:
+                _log.warning("[level_up_routine] Member ID %s tidak ditemukan", member_id)
+                await processing_msg.delete()
+                return
+ 
+            # Step 4: Verifikasi settings kuis
+            await processing_msg.edit(content="📊 Memverifikasi pengaturan dan skor kuis...")
+            success, quiz_message = await verify_quiz_settings(quiz_data, quiz_result, member)
+ 
             _log.info(
-                f"[level_up_routine] Member {member} sudah memiliki role yang setara atau lebih tinggi "
-                f"dari rank_to_get ID={quiz_data['rank_to_get']}. Proses reward dilewati."
+                "[level_up_routine] verify_quiz_settings → success=%s member=%s quiz='%s'",
+                success, member, quiz_data["name"]
             )
+ 
+            # Hapus processing message sebelum kirim hasil
+            await processing_msg.delete()
+            processing_msg = None
+ 
+        except Exception as e:
+            _log.exception("[level_up_routine] Error saat memproses quiz_id %s: %s", quiz_id, e)
+            if processing_msg:
+                await processing_msg.edit(
+                    content="❌ Terjadi kesalahan internal saat memproses hasil kuis. Hubungi admin."
+                )
             return
-
+ 
+        # ── LOGIC REWARD/FAIL (sama seperti sebelumnya) ──────────
+ 
+        if await self.already_owns_higher_or_same_role(quiz_data["rank_to_get"], member):
+            return
+ 
         if success and quiz_data.get("require_role"):
-            required_ids = quiz_data["require_role"] if isinstance(quiz_data["require_role"], list) else [quiz_data["require_role"]]
-            required_roles = [message.guild.get_role(rid) for rid in required_ids if message.guild.get_role(rid)]
+            required_ids = (
+                quiz_data["require_role"]
+                if isinstance(quiz_data["require_role"], list)
+                else [quiz_data["require_role"]]
+            )
+            required_roles = [
+                message.guild.get_role(rid) for rid in required_ids
+                if message.guild.get_role(rid)
+            ]
             if not any(role in member.roles for role in required_roles):
                 mentions = ", ".join(role.mention for role in required_roles)
                 await message.channel.send(
-                    f"⚠️ {member.mention}, Anda membutuhkan salah satu peran berikut untuk melamar kasta ini: {mentions}",
-                    allowed_mentions=discord.AllowedMentions(roles=False)
+                    f"⚠️ {member.mention}, kamu membutuhkan salah satu peran berikut: {mentions}",
+                    allowed_mentions=discord.AllowedMentions(roles=False),
                 )
                 return
-
+ 
+        # ── Ambil next action untuk embed ────────────────────────
+        journey_svc = JourneyService(self.bot, gatekeeper_settings)
+        member_role_ids = {role.id for role in member.roles}
+ 
         if success:
             role_earned = await self.reward_user(member, quiz_data)
             await self.send_in_announcement_channel(member, quiz_message)
+ 
+            # Ambil next action setelah state berubah (member sudah dapat role baru)
+            # Refresh role IDs karena baru saja berubah
+            fresh_member = message.guild.get_member(member.id)
+            if fresh_member:
+                member_role_ids = {role.id for role in fresh_member.roles}
+ 
+            next_action = await journey_svc.get_next_action(
+                message.guild.id, member.id, member_role_ids, message.guild
+            )
+ 
+            # Bangun embed reward dengan next action
+            reward_embed = journey_svc.build_reward_embed(
+                member=member,
+                quiz_name=quiz_data["name"],
+                role=role_earned,
+                action=next_action,
+            )
+            await message.channel.send(embed=reward_embed)
+ 
             try:
                 role_display = role_earned.name if role_earned else quiz_data["name"]
-                await member.send(f"🎉 Selamat! Anda telah berhasil melampaui ujian kuis kasta **{role_display}**!")
+                await member.send(
+                    f"🎉 Selamat! Kamu berhasil lulus ujian kasta **{role_display}**!"
+                )
             except discord.Forbidden:
                 pass
+ 
         else:
+            # Hitung wrong indices dari quiz_result
+            wrong_indices = []
+            if quiz_result.get("questions"):
+                for i, q in enumerate(quiz_result["questions"], 1):
+                    scores = quiz_result.get("scores", [{}])
+                    if scores and q.get("answerers") is None:
+                        wrong_indices.append(i)
+ 
             if await self.rank_has_cooldown(message.guild.id, quiz_data["name"]):
                 await self.register_quiz_attempt(member, message.channel, quiz_data["name"])
-
-            next_sunday_midnight = get_next_sunday_midnight_from(utcnow())
-            next_attempt = int(next_sunday_midnight.timestamp())
+ 
+            next_action = await journey_svc.get_next_action(
+                message.guild.id, member.id, member_role_ids, message.guild
+            )
+ 
+            failure_embed = journey_svc.build_failure_embed(
+                member=member,
+                quiz_name=quiz_data["name"],
+                reason=quiz_message,
+                action=next_action,
+                wrong_indices=wrong_indices if wrong_indices else None,
+            )
+            await message.channel.send(embed=failure_embed)
+ 
             try:
                 await member.send(
-                    f"🍂 Hasil ujian kuis **{quiz_data['name']}** Anda belum berhasil lulus: {quiz_message}\n"
-                    f"Anda diizinkan mengulang kuis kembali pada <t:{next_attempt}:F> (<t:{next_attempt}:R>)."
+                    f"🍂 Hasil ujian kuis **{quiz_data['name']}** belum berhasil: {quiz_message}"
                 )
             except discord.Forbidden:
                 pass
@@ -894,6 +1007,91 @@ class LevelUp(commands.Cog):
 
         await interaction.channel.send(quiz_menu_message, view=view)
 
+    @discord.app_commands.command(
+        name="journey",
+        description="Lihat perjalanan kasta dan langkah berikutnya."
+    )
+    @discord.app_commands.guild_only()
+    async def journey(self, interaction: discord.Interaction):
+        """Tampilkan status lengkap journey kasta user."""
+        await interaction.response.defer(ephemeral=True)
+ 
+        member = interaction.guild.get_member(interaction.user.id)
+        if not member:
+            return await interaction.followup.send("❌ Tidak dapat menemukan data kamu.", ephemeral=True)
+ 
+        journey_svc = JourneyService(self.bot, gatekeeper_settings)
+        member_role_ids = {role.id for role in member.roles}
+ 
+        status = await journey_svc.get_status(
+            interaction.guild.id, member.id, member_role_ids, interaction.guild
+        )
+        action = journey_svc._build_role_map and \
+            await journey_svc.get_next_action(
+                interaction.guild.id, member.id, member_role_ids, interaction.guild
+            )
+        # Versi bersih:
+        action = await journey_svc.get_next_action(
+            interaction.guild.id, member.id, member_role_ids, interaction.guild
+        )
+ 
+        # Embed utama
+        embed = journey_svc.build_journey_embed(status, action, member)
+ 
+        # Button ke timeline
+        view = discord.ui.View(timeout=120)
+ 
+        timeline_btn = discord.ui.Button(
+            label="📜 Lihat Timeline",
+            style=discord.ButtonStyle.secondary,
+        )
+ 
+        async def timeline_callback(btn_interaction: discord.Interaction):
+            if btn_interaction.user.id != interaction.user.id:
+                return await btn_interaction.response.send_message(
+                    "Ini bukan journey kamu.", ephemeral=True
+                )
+            timeline_embed = journey_svc.build_timeline_embed(status, member)
+            await btn_interaction.response.send_message(embed=timeline_embed, ephemeral=True)
+ 
+        timeline_btn.callback = timeline_callback
+        view.add_item(timeline_btn)
+ 
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+ 
+    @discord.app_commands.command(
+        name="my_next_action",
+        description="Apa yang harus aku lakukan sekarang untuk naik kasta?"
+    )
+    @discord.app_commands.guild_only()
+    async def my_next_action(self, interaction: discord.Interaction):
+        """Satu jawaban singkat: langkah berikutnya yang harus dilakukan."""
+        await interaction.response.defer(ephemeral=True)
+ 
+        member = interaction.guild.get_member(interaction.user.id)
+        if not member:
+            return await interaction.followup.send("❌ Tidak dapat menemukan data kamu.", ephemeral=True)
+ 
+        journey_svc = JourneyService(self.bot, gatekeeper_settings)
+        member_role_ids = {role.id for role in member.roles}
+ 
+        action = await journey_svc.get_next_action(
+            interaction.guild.id, member.id, member_role_ids, interaction.guild
+        )
+ 
+        embed = discord.Embed(
+            title="🎯 Langkah Berikutnya",
+            description=journey_svc._format_next_action(action),
+            color=discord.Color.blurple(),
+        )
+ 
+        if action.reward_role_id:
+            role = interaction.guild.get_role(action.reward_role_id)
+            if role:
+                embed.add_field(name="Reward", value=role.mention, inline=True)
+ 
+        embed.set_footer(text="Gunakan /journey untuk melihat seluruh perjalananmu.")
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(LevelUp(bot))
