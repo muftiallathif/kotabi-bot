@@ -208,11 +208,12 @@ class JourneyService:
 
     def build_reward_embed(
         self,
-        member:    discord.Member,
+        member: discord.Member,
         quiz_name: str,
-        role:      Optional[discord.Role],
-        action:    NextAction,
-    ) -> discord.Embed:
+        role: Optional[discord.Role],
+        action: NextAction,
+        quiz_channel_id: Optional[int] = None,   # tambah parameter ini
+) -> discord.Embed:
         """
         Embed setelah user LULUS kuis.
         Menampilkan reward + next action langsung.
@@ -224,11 +225,7 @@ class JourneyService:
         )
 
         if role:
-            embed.add_field(
-                name="Kasta Baru",
-                value=role.mention,
-                inline=True,
-            )
+            embed.add_field(name="Kasta Baru", value=role.mention, inline=True)
 
         # Next step langsung di embed reward
         embed.add_field(
@@ -236,6 +233,18 @@ class JourneyService:
             value=self._format_next_action(action),
             inline=False,
         )
+
+        from lib.journey.models import NextActionType
+        if action.type == NextActionType.TAKE_QUIZ:
+            channel_mention = f"<#{quiz_channel_id}>" if quiz_channel_id else "saluran quiz-rank-up"
+            embed.add_field(
+                name="🎯 Mulai Kuis Berikutnya",
+                value=(
+                    f"Pergi ke {channel_mention} dan pilih **{action.quiz_name}** "
+                    f"dari menu kuis yang tersedia."
+                ),
+                inline=False,
+            )
 
         embed.set_thumbnail(url=member.display_avatar.url)
         return embed

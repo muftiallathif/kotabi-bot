@@ -684,49 +684,43 @@ class LevelUp(commands.Cog):
         # ── PROCESSING FEEDBACK ──────────────────────────────────
         # User tahu bot sedang bekerja, bukan diam
         processing_msg = await message.channel.send(
-            f"⚔️ Memverifikasi hasil ujian... harap tunggu sebentar."
+            "⚔️ Memverifikasi hasil ujian... harap tunggu sebentar."
         )
- 
+
         try:
-            # Step 1: Ambil hasil dari API
-            await processing_msg.edit(content="📥 Mengambil data hasil dari Kotoba...")
             quiz_result = await extract_quiz_result_from_id(quiz_id)
- 
+
             if not quiz_result:
                 await processing_msg.edit(
                     content=(
-                        f"⚠️ Gagal mengambil hasil laporan dari Kotoba API setelah beberapa percobaan.\n"
-                        f"Jika kamu merasa lulus kuis, silakan hubungi Staf Kerajaan dan sertakan "
-                        f"screenshot hasil kuismu."
+                        f"⚠️ Gagal mengambil hasil laporan dari Kotoba API setelah beberapa percobaan.\n\n"
+                        f"**Apa yang bisa dilakukan:**\n"
+                        f"› Tunggu 5–10 menit lalu coba kuis ulang\n"
+                        f"› Jika masih gagal, hubungi Staf dan sertakan screenshot hasil kuismu\n"
+                        f"› Quiz ID: `{quiz_id}`"
                     )
                 )
                 return
- 
-            # Step 2: Cocokkan dengan konfigurasi kasta
-            await processing_msg.edit(content="🔍 Mencocokkan dengan konfigurasi kasta...")
+
             quiz_data = await self.get_corresponding_quiz_data(message, quiz_result)
             if not quiz_data:
                 await processing_msg.delete()
                 return
- 
-            # Step 3: Identifikasi member
+
             member_id = int(quiz_result["participants"][0]["discordUser"]["id"])
             member = message.guild.get_member(member_id)
             if not member:
                 _log.warning("[level_up_routine] Member ID %s tidak ditemukan", member_id)
                 await processing_msg.delete()
                 return
- 
-            # Step 4: Verifikasi settings kuis
-            await processing_msg.edit(content="📊 Memverifikasi pengaturan dan skor kuis...")
+
             success, quiz_message = await verify_quiz_settings(quiz_data, quiz_result, member)
- 
+
             _log.info(
                 "[level_up_routine] verify_quiz_settings → success=%s member=%s quiz='%s'",
                 success, member, quiz_data["name"]
             )
- 
-            # Hapus processing message sebelum kirim hasil
+
             await processing_msg.delete()
             processing_msg = None
  
@@ -780,11 +774,16 @@ class LevelUp(commands.Cog):
             )
  
             # Bangun embed reward dengan next action
+            # Sudah ada guild_id di sini, tinggal ambil channel_id
+            from lib.config import get_channel_id
+            quiz_channel_id = get_channel_id(message.guild.id, "quiz_rank_up")
+
             reward_embed = journey_svc.build_reward_embed(
                 member=member,
                 quiz_name=quiz_data["name"],
                 role=role_earned,
                 action=next_action,
+                quiz_channel_id=quiz_channel_id,   # pass ke sini
             )
             await message.channel.send(embed=reward_embed)
  
