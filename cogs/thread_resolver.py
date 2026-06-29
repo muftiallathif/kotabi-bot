@@ -1,11 +1,13 @@
-from lib.bot import KotabiBot
-import discord
 import os
-import yaml
 import asyncio
-from datetime import timedelta
-from discord.ext import commands, tasks
 import logging
+from datetime import timedelta
+
+import discord
+import yaml
+from discord.ext import commands, tasks
+
+from core.bot import KotabiBot
 
 _log = logging.getLogger(__name__)
 

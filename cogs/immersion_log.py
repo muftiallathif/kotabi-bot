@@ -7,7 +7,7 @@ from typing import Optional
 from datetime import timedelta, datetime, timezone
 from discord.ext import commands
 
-from lib.bot import KotabiBot
+from core.bot import KotabiBot
 from lib.anilist_autocomplete import (
     CACHED_ANILIST_RESULTS_CREATE_TABLE_QUERY, CACHED_ANILIST_THUMBNAIL_QUERY, 
     CACHED_ANILIST_TITLE_QUERY, CREATE_ANILIST_FTS5_TABLE_QUERY, 

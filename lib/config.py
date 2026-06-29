@@ -38,8 +38,12 @@ def _load_server_map() -> dict:
     if not os.path.exists(CONFIG_PATH):
         logger.warning(f"⚠️ File {CONFIG_PATH} tidak ditemukan!")
         return {}
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        _server_map = yaml.safe_load(f) or {}
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            _server_map = yaml.safe_load(f) or {}
+    except Exception as e:
+        logger.error(f"❌ Gagal memuat {CONFIG_PATH}: {e}")
+        return {}
     return _server_map
 
 
@@ -50,9 +54,13 @@ def _load_membership_cfg() -> dict:
     if not os.path.exists(MEMBERSHIP_PATH):
         logger.warning(f"⚠️ File {MEMBERSHIP_PATH} tidak ditemukan!")
         return {}
-    with open(MEMBERSHIP_PATH, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-        _membership_cfg = data.get("membership", {})
+    try:
+        with open(MEMBERSHIP_PATH, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+            _membership_cfg = data.get("membership", {})
+    except Exception as e:
+        logger.error(f"❌ Gagal memuat {MEMBERSHIP_PATH}: {e}")
+        return {}
     return _membership_cfg
 
 
@@ -145,6 +153,48 @@ def get_lifetime_threshold() -> int:
     cfg = _load_membership_cfg()
     return int(cfg.get("roles", {}).get("lifetime", {}).get("point_threshold", 30))
 
+
+# ============================================================================
+# MEMBERSHIP GUILD/CHANNEL HELPERS
+# Dipakai oleh cogs/membership.py, membership_scheduler.py, membership_purchase.py
+# — supaya ketiganya tidak baca ulang membership_settings.yml sendiri-sendiri.
+# ============================================================================
+
+def get_membership_guild_id() -> int:
+    """Guild ID utama yang dipakai sistem membership."""
+    cfg = _load_membership_cfg()
+    guild_id = cfg.get("guild_id", 0)
+    if not guild_id:
+        logger.warning("⚠️ 'guild_id' tidak ditemukan di membership_settings.yml")
+    return int(guild_id)
+
+
+def get_announcement_channel_id() -> int:
+    """Channel untuk pengumuman member baru."""
+    cfg = _load_membership_cfg()
+    return int(cfg.get("announcement_channel_id", 0))
+
+
+def get_order_review_channel_id() -> int:
+    """
+    Channel untuk review order staff.
+    Fallback ke announcement_channel_id kalau order_review_channel_id
+    belum diisi di YAML.
+    """
+    cfg = _load_membership_cfg()
+    return int(cfg.get("order_review_channel_id") or cfg.get("announcement_channel_id", 0))
+
+
+def get_grace_period_days() -> int:
+    """Jumlah hari peringatan sebelum membership expired (default 3)."""
+    cfg = _load_membership_cfg()
+    return int(cfg.get("grace_period_days", 3))
+
+
+def get_moderator_role_ids() -> list[int]:
+    """Role ID yang dianggap moderator/staff untuk command membership."""
+    cfg = _load_membership_cfg()
+    return [int(r) for r in cfg.get("moderator_role_ids", [])]
 
 # ============================================================================
 # CHANNEL HELPERS

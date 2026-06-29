@@ -25,12 +25,10 @@ Dipisah dari cogs/membership.py supaya tidak melebihi 400 baris.
 
 import asyncio
 import logging
-import os
 from datetime import datetime
 from typing import Optional
 
 import discord
-import yaml
 from discord.ext import commands
 from discord.utils import utcnow
 
@@ -40,7 +38,12 @@ from lib.membership.models import Order
 from lib.membership.product_loader import ProductLoader
 from lib.membership.repository import MembershipRepository
 from lib.membership.role_resolver import RoleResolver
-from lib.config import get_lifetime_threshold
+from lib.config import (
+    get_lifetime_threshold,
+    get_membership_guild_id,
+    get_announcement_channel_id,
+    get_order_review_channel_id,
+)
 from lib.membership.service import MembershipService
 
 _log = logging.getLogger("bot.membership_purchase")
@@ -48,23 +51,17 @@ _log = logging.getLogger("bot.membership_purchase")
 # ============================================================
 # KONFIGURASI
 # ============================================================
+# guild_id & channel dibaca lewat lib/config.py (single source of truth untuk
+# membership_settings.yml — lihat DEVELOPMENT_GUIDE_v2.md §4), bukan baca ulang
+# YAML sendiri di file ini.
 
-_MEMBERSHIP_SETTINGS_PATH = (
-    os.getenv("ALT_MEMBERSHIP_SETTINGS_PATH") or "config/membership_settings.yml"
-)
-with open(_MEMBERSHIP_SETTINGS_PATH, "r", encoding="utf-8") as _f:
-    _membership_settings = yaml.safe_load(_f)
+GUILD_ID        = get_membership_guild_id()
+ANNOUNCEMENT_CH = get_announcement_channel_id()
 
-_MEMBERSHIP_CFG  = _membership_settings["membership"]
-GUILD_ID         = _MEMBERSHIP_CFG["guild_id"]
-ANNOUNCEMENT_CH  = _MEMBERSHIP_CFG["announcement_channel_id"]
-
-# Channel khusus untuk embed review order (bisa sama dengan staff-chat)
-# Tambahkan ke membership_settings.yml jika perlu channel berbeda
-ORDER_REVIEW_CH = _MEMBERSHIP_CFG.get(
-    "order_review_channel_id",
-    _MEMBERSHIP_CFG.get("announcement_channel_id")
-)
+# Channel khusus untuk embed review order (bisa sama dengan staff-chat).
+# Fallback ke announcement_channel_id kalau order_review_channel_id belum
+# diisi di YAML — logic fallback-nya sekarang ada di lib/config.py.
+ORDER_REVIEW_CH = get_order_review_channel_id()
 
 PURCHASE_LOCK = asyncio.Lock()
 

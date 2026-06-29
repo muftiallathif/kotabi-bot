@@ -1,7 +1,9 @@
-from lib.bot import KotabiBot
+import asyncio
+
 import discord
 from discord.ext import commands
-import asyncio
+
+from core.bot import KotabiBot
 
 CREATE_STICKY_MESSAGES_TABLE = """
 CREATE TABLE IF NOT EXISTS sticky_messages (

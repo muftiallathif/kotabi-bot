@@ -1,12 +1,12 @@
 """
 restructure_server.py — Penataan Ulang Struktur Kategori & Channel Kotabi
 ===========================================================================
-Cog BERDIRI SENDIRI (tidak import apa pun dari export_server.py) supaya tidak
-rapuh terhadap perubahan nama fungsi/variabel internal di cog lain.
-Semua helper otorisasi & permission didefinisikan ulang secara lokal di sini,
-dengan logika yang SAMA seperti export_server.py — jadi hasil akhirnya tetap
-konsisten satu sumber kebenaran (VIP_CHANNEL_PERMISSIONS & ROLE_NAME_TO_ID
-nilainya disalin persis dari export_server.py).
+Cog ini tidak import apa pun dari export_server.py (menghindari ketergantungan
+antar-cog sesuai DEVELOPMENT_GUIDE_v2.md §2). VIP_CHANNEL_PERMISSIONS dan
+PUBLIC_CHANNELS_FOR_DRIFTER tetap didefinisikan lokal di sini sebagai aturan
+cog (boleh, karena ini definisi logic bukan ID mentah — lihat §4). Role ID
+TIDAK lagi disalin manual; semuanya di-resolve lewat lib.config.get_role_id()
+dari server_map.yml, satu-satunya sumber kebenaran untuk ID.
 
 Commands:
   /setup_structure   — Membuat/menata kategori, memindahkan channel ke
@@ -28,6 +28,7 @@ import logging
 from typing import Optional
 from discord.ext import commands
 from core.bot import KotabiBot
+from lib.config import get_role_id
 
 _log = logging.getLogger(__name__)
 
@@ -67,16 +68,13 @@ VIP_CHANNEL_PERMISSIONS: dict[str, dict[str, bool]] = {
     "immersion-race":   {"trial": True,  "traveler": False, "companion": True,  "scholar": True,  "patron": True},
 }
 
-ROLE_NAME_TO_ID: dict[str, int] = {
-    "trial":           1518029306469548202,
-    "traveler":        1517031166279159848,
-    "companion":       1517676769954762804,
-    "scholar":         1518084701431140524,
-    "patron":          1517718386002628608,
-    "royal_guard":     1517801101959631009,
-    "prime_minister":  1517801149191819427,
-    "drifter":         1518939950987612292,
-}
+# Daftar role key yang dipakai cog ini. ID-nya TIDAK disimpan di sini —
+# selalu di-resolve lewat lib.config.get_role_id() dari server_map.yml
+# (single source of truth, lihat DEVELOPMENT_GUIDE_v2.md §4).
+ROLE_KEYS_USED = [
+    "trial", "traveler", "companion", "scholar", "patron",
+    "royal_guard", "prime_minister", "drifter",
+]
 
 PUBLIC_CHANNELS_FOR_DRIFTER = [
     "welcome-and-rules",
@@ -111,7 +109,8 @@ PUBLIC_CHANNELS_FOR_DRIFTER = [
 # ============================================================================
 
 def _get_role(guild: discord.Guild, role_name: str) -> Optional[discord.Role]:
-    role_id = ROLE_NAME_TO_ID.get(role_name)
+    """Mengambil objek Role dari guild berdasarkan nama kunci, lewat lib.config (server_map.yml)."""
+    role_id = get_role_id(guild.id, role_name)
     if not role_id:
         return None
     return guild.get_role(role_id)

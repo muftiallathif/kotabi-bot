@@ -26,7 +26,13 @@ from discord.ext import commands, tasks
 from discord.utils import utcnow
 
 from core.bot import KotabiBot
-from lib.config import get_lifetime_threshold
+from lib.config import (
+    get_lifetime_threshold,
+    get_membership_guild_id,
+    get_announcement_channel_id,
+    get_grace_period_days,
+    get_moderator_role_ids,
+)
 from lib.grants.engine import ApplyResult, GrantEngine
 from lib.membership.models import MembershipRow
 from lib.membership.product_loader import ProductLoader
@@ -46,20 +52,14 @@ AUTHORIZED_USER_IDS = [
     int(uid) for uid in os.getenv("AUTHORIZED_USERS", "").split(",") if uid.strip()
 ]
 
-# Dibaca dari membership_settings.yml via environment atau default
-import yaml
+# guild_id, channel, grace period, dan moderator role dibaca lewat lib/config.py
+# (single source of truth untuk membership_settings.yml — lihat
+# DEVELOPMENT_GUIDE_v2.md §4), bukan baca ulang YAML sendiri di file ini.
 
-_MEMBERSHIP_SETTINGS_PATH = (
-    os.getenv("ALT_MEMBERSHIP_SETTINGS_PATH") or "config/membership_settings.yml"
-)
-with open(_MEMBERSHIP_SETTINGS_PATH, "r", encoding="utf-8") as _f:
-    _membership_settings = yaml.safe_load(_f)
-
-_MEMBERSHIP_CFG   = _membership_settings["membership"]
-GUILD_ID          = _MEMBERSHIP_CFG["guild_id"]
-ANNOUNCEMENT_CH   = _MEMBERSHIP_CFG["announcement_channel_id"]
-GRACE_PERIOD_DAYS = _MEMBERSHIP_CFG.get("grace_period_days", 3)
-MOD_ROLE_IDS      = _MEMBERSHIP_CFG.get("moderator_role_ids", [])
+GUILD_ID          = get_membership_guild_id()
+ANNOUNCEMENT_CH   = get_announcement_channel_id()
+GRACE_PERIOD_DAYS = get_grace_period_days()
+MOD_ROLE_IDS      = get_moderator_role_ids()
 
 MEMBERSHIP_LOCK = asyncio.Lock()
 

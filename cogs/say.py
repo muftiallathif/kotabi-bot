@@ -4,6 +4,8 @@ import logging
 from discord.ext import commands
 from typing import Optional
 from core.bot import KotabiBot
+from lib.checks import is_staff
+from lib.messages import Msg
 
 _log = logging.getLogger(__name__)
 
@@ -15,7 +17,7 @@ class Say(commands.Cog):
     say_group = discord.app_commands.Group(
         name="say",
         description="Fasilitas administrasi untuk mengirim pesan resmi melalui bot.",
-        default_permissions=discord.Permissions(manage_messages=True)
+        default_permissions=discord.Permissions(administrator=True),
     )
 
     @say_group.command(name="message", description="Kirim pesan teks melalui bot.")
@@ -25,6 +27,7 @@ class Say(commands.Cog):
         reply_to="ID pesan yang ingin dibalas (opsional).",
     )
     @discord.app_commands.guild_only()
+    @is_staff()
     async def say_message(
         self,
         interaction: discord.Interaction,
@@ -50,7 +53,7 @@ class Say(commands.Cog):
             await interaction.followup.send(
                 f"✅ Pesan berhasil dikirim ke {target_channel.mention}.", ephemeral=True
             )
-            _log.info(f"{interaction.user} mengirim pesan ke {target_channel} via /say message")
+            _log.info("%s mengirim pesan ke %s via /say message", interaction.user, target_channel)
         except discord.Forbidden:
             await interaction.followup.send("❌ Bot tidak memiliki izin untuk mengirim pesan di saluran tersebut.", ephemeral=True)
 
@@ -65,6 +68,7 @@ class Say(commands.Cog):
         thumbnail_url="URL gambar kecil di pojok kanan Embed (opsional).",
     )
     @discord.app_commands.guild_only()
+    @is_staff()
     async def say_embed(
         self,
         interaction: discord.Interaction,
@@ -79,7 +83,6 @@ class Say(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         target_channel = channel or interaction.channel
 
-        # Konversi warna hex
         embed_color = discord.Color.blue()
         if color:
             try:
@@ -90,11 +93,7 @@ class Say(commands.Cog):
                     "❌ Format kode warna tidak valid. Mohon gunakan format Hex seperti `#c92a2a`.", ephemeral=True
                 )
 
-        embed = discord.Embed(
-            title=title,
-            description=description,
-            color=embed_color
-        )
+        embed = discord.Embed(title=title, description=description, color=embed_color)
 
         if footer:
             embed.set_footer(text=footer)
@@ -108,7 +107,7 @@ class Say(commands.Cog):
             await interaction.followup.send(
                 f"✅ Pesan Embed berhasil dikirim ke {target_channel.mention}.", ephemeral=True
             )
-            _log.info(f"{interaction.user} mengirim Embed ke {target_channel} via /say embed")
+            _log.info("%s mengirim Embed ke %s via /say embed", interaction.user, target_channel)
         except discord.Forbidden:
             await interaction.followup.send("❌ Bot tidak memiliki izin untuk mengirim pesan di saluran tersebut.", ephemeral=True)
 
@@ -121,6 +120,7 @@ class Say(commands.Cog):
         channel="Saluran tempat pesan berada (opsional, default: saluran saat ini).",
     )
     @discord.app_commands.guild_only()
+    @is_staff()
     async def say_edit(
         self,
         interaction: discord.Interaction,
@@ -145,7 +145,6 @@ class Say(commands.Cog):
             return await interaction.followup.send("❌ Maaf, hanya pesan yang dikirim oleh bot ini yang dapat diubah.", ephemeral=True)
 
         try:
-            # Edit Embed
             if target_message.embeds:
                 old_embed = target_message.embeds[0]
                 new_embed = old_embed.copy()
@@ -154,7 +153,6 @@ class Say(commands.Cog):
                 if new_description is not None:
                     new_embed.description = new_description
                 await target_message.edit(embed=new_embed)
-            # Edit Pesan Teks
             elif new_content:
                 await target_message.edit(content=new_content)
             else:
@@ -164,7 +162,7 @@ class Say(commands.Cog):
                 )
 
             await interaction.followup.send("✅ Pesan berhasil diperbarui.", ephemeral=True)
-            _log.info(f"{interaction.user} mengubah pesan {message_id} di {target_channel} via /say edit")
+            _log.info("%s mengubah pesan %s di %s via /say edit", interaction.user, message_id, target_channel)
         except discord.Forbidden:
             await interaction.followup.send("❌ Bot tidak memiliki izin untuk mengubah pesan tersebut.", ephemeral=True)
 
@@ -174,6 +172,7 @@ class Say(commands.Cog):
         channel="Saluran tempat pesan berada (opsional, default: saluran saat ini).",
     )
     @discord.app_commands.guild_only()
+    @is_staff()
     async def say_delete(
         self,
         interaction: discord.Interaction,
@@ -197,7 +196,7 @@ class Say(commands.Cog):
         try:
             await target_message.delete()
             await interaction.followup.send("✅ Pesan berhasil dihapus.", ephemeral=True)
-            _log.info(f"{interaction.user} menghapus pesan {message_id} di {target_channel} via /say delete")
+            _log.info("%s menghapus pesan %s di %s via /say delete", interaction.user, message_id, target_channel)
         except discord.Forbidden:
             await interaction.followup.send("❌ Bot tidak memiliki izin untuk menghapus pesan tersebut.", ephemeral=True)
 

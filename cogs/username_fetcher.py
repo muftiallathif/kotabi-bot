@@ -1,7 +1,9 @@
 import asyncio
-from lib.bot import KotabiBot
+
 import discord
 from discord.ext import commands
+
+from core.bot import KotabiBot
 
 CREATE_USERS_TABLE = """
 CREATE TABLE IF NOT EXISTS users (

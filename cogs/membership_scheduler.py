@@ -21,15 +21,14 @@ Background tasks yang berjalan otomatis:
 """
 
 import logging
-import os
 from datetime import datetime, timedelta
 
 import discord
-import yaml
 from discord.ext import commands, tasks
 from discord.utils import utcnow
 
 from core.bot import KotabiBot
+from lib.config import get_membership_guild_id, get_order_review_channel_id
 from lib.membership.repository import MembershipRepository
 from lib.membership.role_resolver import RoleResolver
 from lib.membership.service import MembershipService
@@ -39,20 +38,12 @@ _log = logging.getLogger("bot.membership_scheduler")
 # ============================================================
 # KONFIGURASI
 # ============================================================
+# guild_id & channel review order dibaca lewat lib/config.py (single source of
+# truth untuk membership_settings.yml — lihat DEVELOPMENT_GUIDE_v2.md §4),
+# bukan baca ulang YAML sendiri di file ini.
 
-_MEMBERSHIP_SETTINGS_PATH = (
-    os.getenv("ALT_MEMBERSHIP_SETTINGS_PATH") or "config/membership_settings.yml"
-)
-with open(_MEMBERSHIP_SETTINGS_PATH, "r", encoding="utf-8") as _f:
-    _membership_settings = yaml.safe_load(_f)
-
-_MEMBERSHIP_CFG = _membership_settings["membership"]
-GUILD_ID        = _MEMBERSHIP_CFG["guild_id"]
-
-ORDER_REVIEW_CH = _MEMBERSHIP_CFG.get(
-    "order_review_channel_id",
-    _MEMBERSHIP_CFG.get("announcement_channel_id")
-)
+GUILD_ID        = get_membership_guild_id()
+ORDER_REVIEW_CH = get_order_review_channel_id()
 
 # Order pending lebih dari ini → notif staff
 PENDING_WARN_DAYS   = 3

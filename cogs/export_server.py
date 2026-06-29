@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from discord.ext import commands
 from core.bot import KotabiBot
+from lib.config import get_role_id
 
 _log = logging.getLogger(__name__)
 
@@ -55,17 +56,13 @@ VIP_CHANNEL_PERMISSIONS: dict[str, dict[str, bool]] = {
     "immersion-race":   {"trial": True,  "traveler": False, "companion": True,  "scholar": True,  "patron": True},
 }
 
-# Role ID mapping — dari server_map.yml
-ROLE_NAME_TO_ID: dict[str, int] = {
-    "trial":           1518029306469548202,
-    "traveler":        1517031166279159848,
-    "companion":       1517676769954762804,
-    "scholar":         1518084701431140524,
-    "patron":          1517718386002628608,
-    "royal_guard":     1517801101959631009,
-    "prime_minister":  1517801149191819427,
-    "drifter":         1518939950987612292,
-}
+# Daftar role key yang dipakai cog ini untuk resolusi izin VIP/Drifter.
+# ID-nya TIDAK disimpan di sini — selalu di-resolve lewat lib.config.get_role_id()
+# dari server_map.yml (single source of truth, lihat DEVELOPMENT_GUIDE_v2.md §4).
+ROLE_KEYS_USED = [
+    "trial", "traveler", "companion", "scholar", "patron",
+    "royal_guard", "prime_minister", "drifter",
+]
 
 # Channel-channel non-VIP yang perlu dapat akses Drifter
 # (semua channel publik yang bukan VIP-only)
@@ -111,8 +108,8 @@ def _is_authorized(user: discord.Member) -> bool:
 
 
 def _get_role(guild: discord.Guild, role_name: str) -> Optional[discord.Role]:
-    """Mengambil objek Role dari guild berdasarkan nama kunci."""
-    role_id = ROLE_NAME_TO_ID.get(role_name)
+    """Mengambil objek Role dari guild berdasarkan nama kunci, lewat lib.config (server_map.yml)."""
+    role_id = get_role_id(guild.id, role_name)
     if not role_id:
         return None
     return guild.get_role(role_id)
@@ -489,12 +486,13 @@ class RestoreServer(commands.Cog):
         lines = ["🔎 **Validasi Role ID**\n"]
         all_ok = True
 
-        for role_name, role_id in ROLE_NAME_TO_ID.items():
-            role = guild.get_role(role_id)
+        for role_name in ROLE_KEYS_USED:
+            role_id = get_role_id(guild.id, role_name)
+            role = guild.get_role(role_id) if role_id else None
             if role:
                 lines.append(f"✅ `{role_name}` → **{role.name}** (ID: `{role_id}`)")
             else:
-                lines.append(f"❌ `{role_name}` → Role ID `{role_id}` **tidak ditemukan** di server!")
+                lines.append(f"❌ `{role_name}` → Role ID `{role_id or '(tidak ditemukan di server_map.yml)'}` **tidak ditemukan** di server!")
                 all_ok = False
 
         lines.append("\n## Channel VIP")
@@ -509,7 +507,7 @@ class RestoreServer(commands.Cog):
         if all_ok:
             lines.append("\n✅ **Semua role dan channel valid!** Aman untuk menjalankan `/restore`.")
         else:
-            lines.append("\n⚠️ **Ada yang tidak valid!** Periksa ID di `restore_server.py` sebelum menjalankan `/restore`.")
+            lines.append("\n⚠️ **Ada yang tidak valid!** Periksa `config/server_map.yml` sebelum menjalankan `/restore`.")
 
         embed = discord.Embed(
             title="🔎 Hasil Validasi Role & Channel",

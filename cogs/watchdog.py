@@ -6,12 +6,19 @@ from pathlib import Path
 from typing import Optional
 import discord
 from discord.ext import commands, tasks
-from lib.bot import KotabiBot
+from core.bot import KotabiBot
 
 _log = logging.getLogger(__name__)
 
 AUTHORIZED_USER_IDS = [int(uid) for uid in os.getenv("AUTHORIZED_USERS", "").split(",") if uid.strip()]
 DEBUG_USER_ID: Optional[int] = int(os.getenv("DEBUG_USER", 0)) or None
+
+# Kontrol eksplisit: apakah file .py BARU di folder cogs/ boleh otomatis di-load
+# tanpa restart manual. Default FALSE — file baru harus dimuat lewat restart bot
+# (jalur deploy resmi/CI-CD, lihat DEVELOPMENT_GUIDE_v2.md §15), bukan otomatis
+# oleh watchdog. Reload cog yang SUDAH ter-load (saat file-nya diedit) tetap
+# berjalan otomatis seperti sebelumnya — itu kegunaan inti watchdog untuk dev.
+WATCHDOG_AUTO_LOAD_NEW_COGS = os.getenv("WATCHDOG_AUTO_LOAD_NEW_COGS", "false").lower() == "true"
 
 FILE_SCAN_INTERVAL = 3
 HEALTH_CHECK_INTERVAL = 60
@@ -29,7 +36,10 @@ class Watchdog(commands.Cog):
         self._snapshot_mtimes()
         self.file_watcher.start()
         self.health_monitor.start()
-        _log.info("Watchdog aktif (pemantau file + monitor kesehatan).")
+        _log.info(
+            "Watchdog aktif (pemantau file + monitor kesehatan). Auto-load cog baru: %s",
+            "AKTIF" if WATCHDOG_AUTO_LOAD_NEW_COGS else "NONAKTIF (default aman)"
+        )
 
     def cog_unload(self):
         self.file_watcher.cancel()
@@ -70,7 +80,22 @@ class Watchdog(commands.Cog):
             old_mtime = self._mtimes.get(module)
 
             if old_mtime is None:
+                # File BARU terdeteksi — bukan reload cog yang sudah dikenal.
                 self._mtimes[module] = mtime
+
+                if not WATCHDOG_AUTO_LOAD_NEW_COGS:
+                    _log.warning(
+                        "[watchdog] File cog baru terdeteksi tapi TIDAK dimuat otomatis "
+                        "(WATCHDOG_AUTO_LOAD_NEW_COGS=false): %s. "
+                        "Restart bot atau set env var ini ke 'true' untuk memuatnya.",
+                        module
+                    )
+                    await self._notify_debug_user(
+                        f"⚠️ **Watchdog** — file cog baru terdeteksi tapi tidak dimuat otomatis: "
+                        f"`{module}`. Restart bot untuk memuatnya."
+                    )
+                    continue
+
                 try:
                     await self.bot.load_extension(module)
                     _log.info("[watchdog] Memuat modul baru: %s", module)
@@ -80,6 +105,7 @@ class Watchdog(commands.Cog):
                 continue
 
             if mtime != old_mtime:
+                # Modul SUDAH dikenal (sudah ter-load sebelumnya) — reload otomatis tetap aman.
                 self._mtimes[module] = mtime
                 try:
                     await self.bot.reload_extension(module)
@@ -119,6 +145,11 @@ class Watchdog(commands.Cog):
         health = "✅ Normal" if elapsed <= HEALTH_WARN_THRESHOLD else "⚠️ LAMBAT"
         embed = discord.Embed(title="Status Watchdog", color=discord.Color.green())
         embed.add_field(name="File Watcher", value=f"Pemindaian setiap `{FILE_SCAN_INTERVAL}s`", inline=True)
+        embed.add_field(
+            name="Auto-load Cog Baru",
+            value="✅ Aktif" if WATCHDOG_AUTO_LOAD_NEW_COGS else "🔒 Nonaktif (default aman)",
+            inline=True
+        )
         embed.add_field(name="Monitor Kesehatan", value=f"{health}\nAktivitas terakhir: `{elapsed:.1f}s` lalu", inline=True)
         await ctx.send(embed=embed)
 
