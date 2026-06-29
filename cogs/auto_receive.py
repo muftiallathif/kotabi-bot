@@ -3,7 +3,6 @@ from discord.ext import commands
 import logging
 import datetime
 
-# Impor pembaca konfigurasi Level 0
 from lib.config import get_role_id, get_channel_id
 
 logger = logging.getLogger("bot.auto_receive")
@@ -18,7 +17,6 @@ class AutoReceive(commands.Cog):
         guild = member.guild
         guild_id = guild.id
 
-        # 1. Ambil ID peran Drifter secara dinamis dari server_map
         drifter_role_id = get_role_id(guild_id, "drifter")
         drifter_role = guild.get_role(drifter_role_id)
 
@@ -31,7 +29,6 @@ class AutoReceive(commands.Cog):
         else:
             logger.warning(f"⚠️ Peran 'drifter' tidak ditemukan di server_map.yml atau server Discord untuk Guild {guild_id}!")
 
-        # 2. Kirim pesan log penyambutan ke saluran join-log
         join_log_id = get_channel_id(guild_id, "join_log")
         join_log_channel = guild.get_channel(join_log_id)
 
@@ -39,21 +36,22 @@ class AutoReceive(commands.Cog):
             role_assign_channel_id = get_channel_id(guild_id, 'role_assign')
             role_assign_channel = guild.get_channel(role_assign_channel_id)
             role_assign_mention = role_assign_channel.mention if role_assign_channel else '#role-assign'
-            
-            embed_welcome = discord.Embed(
-                title="⛵ Kapal Baru Berlabuh!",
+
+            embed = discord.Embed(
                 description=(
-                    f"Selamat datang di Kerajaan Kotabi, {member.mention}!\n"
-                    f"Anda resmi menyandang kasta awal sebagai **{drifter_role.name if drifter_role else 'Drifter'}**.\n\n"
-                    f"Silakan menuju ke saluran {role_assign_mention} untuk memilih kubu minat Anda!"
+                    f"{member.mention} bergabung.\n\n"
+                    f"Pilih kubu minat di {role_assign_mention} untuk memulai."
                 ),
                 color=discord.Color.light_gray(),
-                timestamp=datetime.datetime.now(datetime.timezone.utc)
             )
-            embed_welcome.set_thumbnail(url=member.display_avatar.url)
-            embed_welcome.set_footer(text=f"ID Pengguna: {member.id}")
+            embed.set_author(
+                name=member.display_name,
+                icon_url=member.display_avatar.url,
+            )
+            embed.set_footer(text=f"ID: {member.id}")
+
             try:
-                await join_log_channel.send(embed=embed_welcome)
+                await join_log_channel.send(embed=embed)
             except Exception as e:
                 logger.error(f"❌ Gagal mengirim pesan sambutan ke join-log: {e}")
 
@@ -64,7 +62,6 @@ class AutoReceive(commands.Cog):
         if not guild:
             return
 
-        # Ambil ID saluran role-assign secara dinamis
         role_assign_channel_id = get_channel_id(payload.guild_id, "role_assign")
         if payload.channel_id != role_assign_channel_id:
             return
@@ -73,7 +70,6 @@ class AutoReceive(commands.Cog):
         if not member or member.bot:
             return
 
-        # Pemetaan emoji reaksi ke nama kunci peran yang benar di server_map.yml (Telah diselaraskan)
         emoji_to_role = {
             "🎬": "faction_anime",
             "📚": "faction_bookworm",
@@ -94,9 +90,8 @@ class AutoReceive(commands.Cog):
             if role:
                 try:
                     await member.add_roles(role)
-                    # Kirim pesan sementara di DM agar warga tahu peran berhasil ditambahkan
                     try:
-                        await member.send(f"✅ Anda berhasil bergabung dengan kubu faksi **{role.name}**!")
+                        await member.send(f"✅ Kamu bergabung dengan kubu **{role.name}**.")
                     except discord.Forbidden:
                         pass
                 except Exception as e:
@@ -117,7 +112,6 @@ class AutoReceive(commands.Cog):
         if not member or member.bot:
             return
 
-        # Pemetaan emoji reaksi ke nama kunci peran yang benar di server_map.yml (Telah diselaraskan)
         emoji_to_role = {
             "🎬": "faction_anime",
             "📚": "faction_bookworm",
@@ -139,7 +133,7 @@ class AutoReceive(commands.Cog):
                 try:
                     await member.remove_roles(role)
                     try:
-                        await member.send(f"🧹 Anda telah keluar dari kubu faksi **{role.name}**.")
+                        await member.send(f"Kamu keluar dari kubu **{role.name}**.")
                     except discord.Forbidden:
                         pass
                 except Exception as e:

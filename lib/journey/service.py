@@ -3,11 +3,10 @@ lib/journey/service.py
 ======================
 Facade untuk Journey system.
 Orchestrate queries.py + rules.py.
-Tidak ada SQL langsung. Tidak ada Discord embed.
+Tidak ada SQL langsung.
 
 Dipakai oleh:
-- cogs/gatekeeper.py (setelah refactor)
-- Fitur lain yang butuh data journey user
+- cogs/gatekeeper.py
 
 Penggunaan:
     svc = JourneyService(bot, gatekeeper_settings)
@@ -26,9 +25,11 @@ import discord
 
 from lib.journey import queries as q
 from lib.journey.models import (
+    AttemptEvent,
     JourneyStatus,
     NextAction,
     NextActionType,
+    QuizAvailability,
     QuizInfo,
 )
 from lib.journey.rules import (
@@ -51,6 +52,23 @@ def _get_rank_structure(settings: dict, guild_id: int) -> list:
     return rank_map.get(guild_id) or rank_map.get(str(guild_id)) or []
 
 
+# Urutan tier grup untuk roadmap — sesuai urutan progression di gatekeeper_settings.yml
+_TIER_GROUPS = [
+    ("Dasar",   ["【平民】Commoner", "【騎士】Knight"]),
+    ("N5",      ["【N5・従男爵】Baronet", "【N5・男爵】Baron"]),
+    ("N4",      ["【N4・従子爵】Junior Viscount", "【N4・子爵】Viscount"]),
+    ("N3",      ["【N3・従伯爵】Junior Count", "【N3・伯爵】Count"]),
+    ("N2",      ["【N2・従侯爵】Junior Marquess", "【N2・侯爵】Marquess"]),
+    ("N1",      ["【N1・従公爵】Junior Duke", "【N1・公爵】Duke"]),
+    ("Puncak",  [
+        "【選帝侯】Prince Elector",
+        "【国王】High King",
+        "【覇王】Overlord",
+        "【皇帝】Emperor",
+    ]),
+]
+
+
 class JourneyService:
     def __init__(self, bot: "KotabiBot", gatekeeper_settings: dict):
         self.bot      = bot
@@ -60,6 +78,10 @@ class JourneyService:
         """Map role_id → role name untuk display di NextAction."""
         return {role.id: role.name for role in guild.roles}
 
+    # ============================================================
+    # DATA LAYER
+    # ============================================================
+
     async def get_status(
         self,
         guild_id:        int,
@@ -67,25 +89,14 @@ class JourneyService:
         member_role_ids: set[int],
         guild:           Optional[discord.Guild] = None,
     ) -> JourneyStatus:
-        """
-        Ambil snapshot lengkap kondisi journey user.
-
-        Parameter:
-            guild_id        — ID server
-            user_id         — ID user
-            member_role_ids — set role ID yang dimiliki member sekarang
-            guild           — discord.Guild object (untuk role map, opsional)
-        """
+        """Ambil snapshot lengkap kondisi journey user."""
         now            = datetime.now(timezone.utc)
         rank_structure = _get_rank_structure(self.settings, guild_id)
 
-        # Fetch data dari DB (semua query paralel lebih baik,
-        # tapi KotabiBot pakai lock jadi sequential untuk safety)
         passed_names  = await q.get_passed_quiz_names(self.bot, guild_id, user_id)
         last_attempts = await q.get_last_attempt_per_quiz(self.bot, guild_id, user_id)
         raw_history   = await q.get_attempt_history(self.bot, guild_id, user_id)
 
-        # Build QuizInfo untuk setiap kuis
         quizzes: list[QuizInfo] = []
         for quiz_config in rank_structure:
             try:
@@ -103,8 +114,10 @@ class JourneyService:
                     quiz_config.get("name", "?"), guild_id, e
                 )
 
-        # Build attempt history events
-        history = build_attempt_events(raw_history, passed_names)
+        # Kuis no_timeout yang lulus first-try tidak tercatat di quiz_attempts,
+        # sehingga timeline kosong walau user sudah lulus. Fallback di sini
+        # menyisipkan event dari passed_quizzes yang tidak punya riwayat attempt.
+        history = self._build_history_with_fallback(raw_history, passed_names, quizzes)
 
         return JourneyStatus(
             guild_id=guild_id,
@@ -113,6 +126,31 @@ class JourneyService:
             history=history,
         )
 
+    def _build_history_with_fallback(
+        self,
+        raw_history:  list[tuple[str, datetime]],
+        passed_names: set[str],
+        quizzes:      list[QuizInfo],
+    ) -> list[AttemptEvent]:
+        """
+        Bangun history events dari quiz_attempts.
+        Kuis yang lulus tapi tidak punya entri attempt (no_timeout, first-try)
+        tetap dimunculkan dengan timestamp sekarang sebagai placeholder.
+        """
+        events  = build_attempt_events(raw_history, passed_names)
+        covered = {e.quiz_name for e in events}
+
+        now = datetime.now(timezone.utc)
+        for quiz in quizzes:
+            if quiz.is_passed and quiz.name not in covered:
+                events.append(AttemptEvent(
+                    quiz_name=quiz.name,
+                    timestamp=now,
+                    passed=True,
+                ))
+
+        return events
+
     async def get_next_action(
         self,
         guild_id:        int,
@@ -120,10 +158,7 @@ class JourneyService:
         member_role_ids: set[int],
         guild:           Optional[discord.Guild] = None,
     ) -> NextAction:
-        """
-        Tentukan satu hal yang harus dilakukan user sekarang.
-        Ini output utama yang dipakai di semua embed.
-        """
+        """Tentukan satu hal yang harus dilakukan user sekarang."""
         status = await self.get_status(guild_id, user_id, member_role_ids, guild)
 
         role_map = {}
@@ -132,227 +167,272 @@ class JourneyService:
 
         return calculate_next_action(status.quizzes, role_map)
 
+    # ============================================================
+    # EMBED: /journey
+    # ============================================================
+
     def build_journey_embed(
         self,
-        status:    JourneyStatus,
-        action:    NextAction,
-        member:    discord.Member,
-        color:     Optional[discord.Color] = None,
+        status: JourneyStatus,
+        action: NextAction,
+        member: discord.Member,
+        color:  Optional[discord.Color] = None,
     ) -> discord.Embed:
         """
-        Buat embed /journey lengkap.
-        Dipakai oleh gatekeeper.py untuk command /journey.
+        Embed /journey. Tiga blok:
+          1. Progress bar ringkas
+          2. Langkah sekarang (satu kalimat)
+          3. Peta kasta dikelompokkan per tier
         """
         passed, total = calculate_progress(status.quizzes)
-        progress_bar  = build_progress_bar(passed, total)
+        bar     = build_progress_bar(passed, total)
+        percent = round((passed / total) * 100) if total else 0
 
         embed = discord.Embed(
-            title=f"📜 Journey Kasta — {member.display_name}",
+            title=f"Perjalanan Kasta — {member.display_name}",
             color=color or discord.Color.blurple(),
         )
         embed.set_thumbnail(url=member.display_avatar.url)
 
-        # Progress bar
         embed.add_field(
-            name="Progress Keseluruhan",
-            value=f"`{progress_bar}`",
+            name="Progress",
+            value=f"`{bar}`  {passed}/{total} selesai ({percent}%)",
             inline=False,
         )
 
-        # Next Action — bagian paling penting
-        action_text = self._format_next_action(action)
         embed.add_field(
-            name="🎯 Yang Harus Kamu Lakukan Sekarang",
-            value=action_text,
+            name="Langkah sekarang",
+            value=self._format_next_action(action, compact=True),
             inline=False,
         )
 
-        # Status per kuis (ringkas)
-        quiz_lines = []
-        for quiz in status.quizzes:
-            if quiz.is_combination:
-                continue  # combination rank ditampilkan terpisah
-            icon = self._availability_icon(quiz)
-            quiz_lines.append(f"{icon} {quiz.name}")
+        roadmap = self._build_grouped_roadmap(status.quizzes)
+        if roadmap:
+            embed.add_field(name="Peta kasta", value=roadmap, inline=False)
 
-        if quiz_lines:
-            # Batasi supaya embed tidak terlalu panjang
-            display = quiz_lines[:15]
-            if len(quiz_lines) > 15:
-                display.append(f"... dan {len(quiz_lines) - 15} lainnya")
-            embed.add_field(
-                name="Daftar Kuis",
-                value="\n".join(display),
-                inline=False,
-            )
+        combo = self._build_combo_summary(status)
+        if combo:
+            embed.add_field(name="Gelar kombinasi", value=combo, inline=False)
 
-        # Combination ranks
-        combo_quizzes = [q for q in status.quizzes if q.is_combination]
-        if combo_quizzes:
-            combo_lines = []
-            for quiz in combo_quizzes:
-                icon = self._availability_icon(quiz)
-                needed = quiz.quizzes_required
-                done   = [n for n in needed if n in {q.name for q in status.passed_quizzes}]
-                combo_lines.append(
-                    f"{icon} {quiz.name} ({len(done)}/{len(needed)} syarat)"
-                )
-            embed.add_field(
-                name="Gelar Kombinasi",
-                value="\n".join(combo_lines),
-                inline=False,
-            )
-
-        embed.set_footer(text=f"Total lulus: {status.total_passed} kuis")
+        embed.set_footer(text="Gunakan tombol di bawah untuk melihat riwayat ujian.")
         return embed
+
+    def _build_grouped_roadmap(self, quizzes: list[QuizInfo]) -> str:
+        """
+        Kelompokkan kuis per tier. Tier yang sudah selesai semua → satu baris ringkas.
+        Tier aktif dan ke depan → tampilkan per kuis dengan status.
+
+        Contoh output:
+            ✅ Dasar — selesai
+            **N5**
+            ✅ Baronet  ·  **> Baron**
+            **N4**
+            — Junior Viscount  ·  — Viscount
+        """
+        by_name = {quiz.name: quiz for quiz in quizzes if not quiz.is_combination}
+        lines   = []
+
+        for label, names in _TIER_GROUPS:
+            group = [by_name[n] for n in names if n in by_name]
+            if not group:
+                continue
+
+            # Semua sudah lulus → ringkas
+            if all(quiz.is_passed for quiz in group):
+                lines.append(f"✅ **{label}** — selesai")
+                continue
+
+            parts = []
+            for quiz in group:
+                short = quiz.name.split("】")[-1].strip() if "】" in quiz.name else quiz.name
+
+                if quiz.availability == QuizAvailability.PASSED:
+                    parts.append(f"✅ {short}")
+                elif quiz.availability in (QuizAvailability.AVAILABLE, QuizAvailability.NO_TIMEOUT):
+                    parts.append(f"**> {short}**")   # posisi aktif
+                elif quiz.availability == QuizAvailability.ON_COOLDOWN:
+                    parts.append(f"⏳ {short}")
+                else:
+                    parts.append(f"— {short}")        # locked
+
+            lines.append(f"**{label}**\n" + "  ·  ".join(parts))
+
+        return "\n".join(lines)
+
+    def _build_combo_summary(self, status: JourneyStatus) -> str:
+        combo_quizzes = [quiz for quiz in status.quizzes if quiz.is_combination]
+        if not combo_quizzes:
+            return ""
+
+        passed_names = {quiz.name for quiz in status.passed_quizzes}
+        lines = []
+        for quiz in combo_quizzes:
+            icon  = "✅" if quiz.is_passed else "—"
+            done  = [n for n in quiz.quizzes_required if n in passed_names]
+            total = len(quiz.quizzes_required)
+            lines.append(f"{icon} **{quiz.name}** — {len(done)}/{total} syarat terpenuhi")
+        return "\n".join(lines)
+
+    # ============================================================
+    # EMBED: setelah lulus kuis
+    # ============================================================
 
     def build_reward_embed(
         self,
-        member: discord.Member,
-        quiz_name: str,
-        role: Optional[discord.Role],
-        action: NextAction,
-        quiz_channel_id: Optional[int] = None,   # tambah parameter ini
-) -> discord.Embed:
+        member:          discord.Member,
+        quiz_name:       str,
+        role:            Optional[discord.Role],
+        action:          NextAction,
+        quiz_channel_id: Optional[int] = None,
+    ) -> discord.Embed:
         """
-        Embed setelah user LULUS kuis.
-        Menampilkan reward + next action langsung.
+        Embed setelah user lulus kuis.
+        Satu pandangan cukup: apa yang didapat → apa yang harus dilakukan selanjutnya.
         """
         embed = discord.Embed(
-            title=f"🏆 Selamat, {member.display_name}!",
-            description=f"Kamu berhasil lulus ujian **{quiz_name}**.",
+            title=f"Lulus — {quiz_name}",
             color=discord.Color.gold(),
         )
+        embed.set_thumbnail(url=member.display_avatar.url)
 
         if role:
-            embed.add_field(name="Kasta Baru", value=role.mention, inline=True)
+            embed.add_field(name="Kasta baru", value=role.mention, inline=True)
 
-        # Next step langsung di embed reward
-        embed.add_field(
-            name="━━━━━━━━━━━━━━",
-            value=self._format_next_action(action),
-            inline=False,
-        )
-
-        from lib.journey.models import NextActionType
         if action.type == NextActionType.TAKE_QUIZ:
-            channel_mention = f"<#{quiz_channel_id}>" if quiz_channel_id else "saluran quiz-rank-up"
+            channel_mention = f"<#{quiz_channel_id}>" if quiz_channel_id else "#quiz-rank-up"
             embed.add_field(
-                name="🎯 Mulai Kuis Berikutnya",
-                value=(
-                    f"Pergi ke {channel_mention} dan pilih **{action.quiz_name}** "
-                    f"dari menu kuis yang tersedia."
-                ),
+                name="Lanjut ke",
+                value=f"**{action.quiz_name}** — buka {channel_mention} dan pilih dari menu kuis.",
+                inline=False,
+            )
+        elif action.type == NextActionType.WAIT and action.cooldown_until:
+            embed.add_field(
+                name="Kuis berikutnya",
+                value=f"Tersedia <t:{action.cooldown_until}:R>.",
+                inline=False,
+            )
+        elif action.type == NextActionType.LOCKED:
+            roles = ", ".join(f"`{r}`" for r in action.missing_roles) if action.missing_roles else "syarat tertentu"
+            embed.add_field(
+                name="Kuis berikutnya",
+                value=f"Butuh {roles} sebelum bisa lanjut ke **{action.quiz_name or action.title}**.",
+                inline=False,
+            )
+        elif action.type == NextActionType.COMPLETE:
+            embed.add_field(
+                name="Status",
+                value="Semua kuis yang tersedia sudah selesai.",
                 inline=False,
             )
 
-        embed.set_thumbnail(url=member.display_avatar.url)
         return embed
+
+    # ============================================================
+    # EMBED: setelah gagal kuis
+    # ============================================================
 
     def build_failure_embed(
         self,
-        member:         discord.Member,
-        quiz_name:      str,
-        reason:         str,
-        action:         NextAction,
-        wrong_indices:  Optional[list[int]] = None,
+        member:        discord.Member,
+        quiz_name:     str,
+        reason:        str,
+        action:        NextAction,
+        wrong_indices: Optional[list[int]] = None,
     ) -> discord.Embed:
-        """
-        Embed setelah user GAGAL kuis.
-        Menampilkan alasan + soal yang salah + next action.
-        """
+        """Embed setelah user gagal kuis."""
         embed = discord.Embed(
-            title=f"❌ Belum Lulus — {quiz_name}",
+            title=f"Belum lulus — {quiz_name}",
             description=reason,
             color=discord.Color.red(),
         )
         embed.set_thumbnail(url=member.display_avatar.url)
 
-        # Soal yang salah (kalau tersedia dari Kotoba API)
         if wrong_indices:
             indices_str = ", ".join(f"no. {i}" for i in wrong_indices[:10])
             if len(wrong_indices) > 10:
-                indices_str += f" ... (+{len(wrong_indices) - 10} lagi)"
+                indices_str += f" (+{len(wrong_indices) - 10} lainnya)"
+            embed.add_field(name="Soal yang perlu diulang", value=indices_str, inline=False)
+
+        if action.type == NextActionType.WAIT and action.cooldown_until:
             embed.add_field(
-                name="📝 Soal yang Perlu Diulang",
-                value=indices_str,
+                name="Coba lagi",
+                value=f"<t:{action.cooldown_until}:R> (<t:{action.cooldown_until}:F>)",
+                inline=False,
+            )
+        else:
+            embed.add_field(
+                name="Langkah selanjutnya",
+                value=self._format_next_action(action, compact=True),
                 inline=False,
             )
 
-        # Next action (biasanya WAIT dengan cooldown)
-        embed.add_field(
-            name="━━━━━━━━━━━━━━",
-            value=self._format_next_action(action),
-            inline=False,
-        )
-
         return embed
+
+    # ============================================================
+    # EMBED: timeline (/journey → tombol "Lihat Timeline")
+    # ============================================================
 
     def build_timeline_embed(
         self,
         status: JourneyStatus,
         member: discord.Member,
     ) -> discord.Embed:
-        """
-        Embed timeline attempt history user.
-        Dipakai di /journey dengan button "Lihat Timeline".
-        """
+        """Timeline riwayat ujian, terbaru di atas."""
         embed = discord.Embed(
-            title=f"📜 Timeline Journey — {member.display_name}",
+            title=f"Riwayat Ujian — {member.display_name}",
             color=discord.Color.blurple(),
         )
 
         if not status.history:
-            embed.description = "Belum ada riwayat ujian."
+            embed.description = "Belum ada riwayat ujian. Mulai dari menu kuis di #quiz-rank-up."
             return embed
 
         lines = []
-        for event in status.history[:20]:  # maksimal 20 event
-            date_str  = event.timestamp.strftime("%d %b %Y")
-            icon      = "✅" if event.passed else "❌"
-            lines.append(f"`{date_str}` {icon} **{event.quiz_name}**")
+        for event in status.history[:20]:
+            mark = "✅" if event.passed else "✗"
+            date = event.timestamp.strftime("%d %b %Y")
+            lines.append(f"`{date}`  {mark}  {event.quiz_name}")
 
         embed.description = "\n".join(lines)
-        embed.set_footer(text=f"Menampilkan {len(lines)} dari {len(status.history)} percobaan")
+        shown = min(len(status.history), 20)
+        embed.set_footer(text=f"{shown} dari {len(status.history)} percobaan")
         return embed
 
     # ============================================================
     # PRIVATE HELPERS
     # ============================================================
 
-    def _format_next_action(self, action: NextAction) -> str:
+    def _format_next_action(self, action: NextAction, compact: bool = False) -> str:
         if action.type == NextActionType.TAKE_QUIZ:
-            text = f"**{action.title}**\n{action.description}"
-            if action.command:
-                text += f"\n\n> Gunakan tombol di menu kuis untuk memulai."
-            return text
+            if compact:
+                return f"**{action.quiz_name}** — siap diambil sekarang."
+            return f"**{action.title}**\n{action.description}\n\nGunakan tombol di menu kuis untuk memulai."
 
         if action.type == NextActionType.WAIT:
             ts   = action.cooldown_until
-            text = f"**⏳ {action.title}**\n{action.description}"
-            if ts:
-                text += f"\n\nBisa coba lagi: <t:{ts}:R> (<t:{ts}:F>)"
-            return text
+            when = f"<t:{ts}:R>" if ts else "sebentar lagi"
+            if compact:
+                return f"**{action.quiz_name}** sedang cooldown. Coba lagi {when}."
+            text = f"**{action.title}**\n{action.description}"
+            return text + (f"\n\nCoba lagi: {when}" if ts else "")
 
         if action.type == NextActionType.LOCKED:
-            text = f"**🔒 {action.title}**\n{action.description}"
-            if action.missing_roles:
-                roles_str = ", ".join(f"`{r}`" for r in action.missing_roles)
-                text += f"\n\nSyarat yang belum terpenuhi: {roles_str}"
-            return text
+            roles = ", ".join(f"`{r}`" for r in action.missing_roles) if action.missing_roles else "syarat tertentu"
+            if compact:
+                return f"Butuh {roles} sebelum bisa lanjut ke **{action.quiz_name or action.title}**."
+            return f"**{action.title}**\n{action.description}\n\nSyarat: {roles}"
 
         if action.type == NextActionType.COMPLETE:
-            return f"**🎉 {action.title}**\n{action.description}"
+            return "Semua kuis selesai."
 
         return action.description
 
     def _availability_icon(self, quiz: QuizInfo) -> str:
-        from lib.journey.models import QuizAvailability
         icons = {
             QuizAvailability.PASSED:      "✅",
-            QuizAvailability.AVAILABLE:   "🎯",
+            QuizAvailability.AVAILABLE:   ">",
             QuizAvailability.ON_COOLDOWN: "⏳",
-            QuizAvailability.LOCKED:      "🔒",
-            QuizAvailability.NO_TIMEOUT:  "🎯",
+            QuizAvailability.LOCKED:      "—",
+            QuizAvailability.NO_TIMEOUT:  ">",
         }
-        return icons.get(quiz.availability, "❓")
+        return icons.get(quiz.availability, "?")
