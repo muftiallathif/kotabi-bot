@@ -1026,11 +1026,6 @@ class LevelUp(commands.Cog):
         status = await journey_svc.get_status(
             interaction.guild.id, member.id, member_role_ids, interaction.guild
         )
-        action = journey_svc._build_role_map and \
-            await journey_svc.get_next_action(
-                interaction.guild.id, member.id, member_role_ids, interaction.guild
-            )
-        # Versi bersih:
         action = await journey_svc.get_next_action(
             interaction.guild.id, member.id, member_role_ids, interaction.guild
         )

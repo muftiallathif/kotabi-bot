@@ -138,14 +138,6 @@ class GoalsCog(commands.Cog):
         end_date_or_hours='Tanggal batas pencapaian target (format YYYY-MM-DD) atau jumlah jam dari sekarang.',
         start_date='Tanggal mulai pelacakan target (format YYYY-MM-DD atau YYYY-MM-DD HH:MM).'
     )
-    @discord.app_commands.command(name='log_set_goal', description='Pasang target belajar (immersion) untuk dirimu sendiri!')
-    @discord.app_commands.describe(
-        media_type='Tipe media yang ingin kamu pasang target belajarnya.',
-        goal_type='Tipe target, bisa berupa poin atau jumlah (amount).',
-        goal_value='Nilai target yang ingin kamu capai.',
-        end_date_or_hours='Tanggal batas pencapaian target (format YYYY-MM-DD) atau jumlah jam dari sekarang.',
-        start_date='Tanggal mulai pelacakan target (format YYYY-MM-DD atau YYYY-MM-DD HH:MM).'
-    )
     @discord.app_commands.choices(goal_type=[
         discord.app_commands.Choice(name='Poin', value='points'),
         discord.app_commands.Choice(name='Jumlah (Amount)', value='amount')],
