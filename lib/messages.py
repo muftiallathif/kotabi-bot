@@ -23,7 +23,7 @@ class Msg:
 
     # --- Access Control ---
     VIP_ONLY = (
-        "❌ Fitur ini hanya tersedia untuk **member VIP** Kerajaan Kotabi.\n\n"
+        "❌ Fitur ini hanya tersedia untuk **member VIP** Kotabi Japanese.\n\n"
         "🎒 **Traveler** — Rp46.000 / bulan\n"
         "🤝 **Companion** — Rp92.000 / bulan\n"
         "📚 **Scholar** — Rp350.000 / bulan\n"
@@ -236,3 +236,19 @@ class Msg:
     @staticmethod
     def mute_previous_roles(roles_mention_str: str) -> str:
         return f"Peran Anda sebelumnya: {roles_mention_str}"
+    
+    # --- Auto Receive (Faction Selection) ---
+    @staticmethod
+    def auto_receive_welcome(member_mention: str, role_assign_mention: str) -> str:
+        return (
+            f"{member_mention} bergabung.\n\n"
+            f"Pilih kubu minat di {role_assign_mention} untuk memulai."
+        )
+
+    @staticmethod
+    def faction_joined(role_name: str) -> str:
+        return f"✅ Kamu bergabung dengan kubu **{role_name}**."
+
+    @staticmethod
+    def faction_left(role_name: str) -> str:
+        return f"Kamu keluar dari kubu **{role_name}**."

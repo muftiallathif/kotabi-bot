@@ -1,6 +1,6 @@
 """
-full_backup.py — Backup Lengkap Struktur Server Kotabi
-========================================================
+backup_discord_server.py — Backup Lengkap Struktur Server Kotabi
+==================================================================
 Membackup seluruh struktur server (bukan isi chat) ke dalam satu file JSON.
 
 LIMITASI (sesuai kebijakan & arsitektur Discord API — tidak bisa dilewati):
@@ -33,6 +33,7 @@ import io
 import os
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 from discord.ext import commands
 from core.bot import KotabiBot
 
@@ -137,6 +138,21 @@ def _serialize_role(role: discord.Role) -> dict:
         "icon_url": str(role.icon.url) if getattr(role, "icon", None) else None,
         "unicode_emoji": getattr(role, "unicode_emoji", None),
     }
+
+
+def _serialize_location(location) -> Optional[str]:
+    """
+    Serialisasi lokasi scheduled event ke string aman untuk JSON.
+    Event eksternal: location berupa string bebas (alamat/teks).
+    Event yang nempel voice/stage channel: location berupa objek channel,
+    BUKAN string — kalau langsung dimasukkan ke json.dumps() akan
+    melempar TypeError dan menggagalkan seluruh proses backup.
+    """
+    if location is None:
+        return None
+    if isinstance(location, str):
+        return location
+    return f"#{getattr(location, 'name', '?')} (ID: {getattr(location, 'id', None)})"
 
 
 # ============================================================================
@@ -248,7 +264,7 @@ class FullBackup(commands.Cog):
                         "description": event.description,
                         "start_time": event.start_time.isoformat() if event.start_time else None,
                         "end_time": event.end_time.isoformat() if event.end_time else None,
-                        "location": event.location,
+                        "location": _serialize_location(event.location),
                         "status": str(event.status),
                         "channel_id": event.channel_id,
                     }

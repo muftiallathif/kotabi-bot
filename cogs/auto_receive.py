@@ -4,6 +4,7 @@ import logging
 import datetime
 
 from lib.config import get_role_id, get_channel_id
+from lib.messages import Msg   # ← baris baru
 
 logger = logging.getLogger("bot.auto_receive")
 
@@ -38,10 +39,7 @@ class AutoReceive(commands.Cog):
             role_assign_mention = role_assign_channel.mention if role_assign_channel else '#role-assign'
 
             embed = discord.Embed(
-                description=(
-                    f"{member.mention} bergabung.\n\n"
-                    f"Pilih kubu minat di {role_assign_mention} untuk memulai."
-                ),
+                description=Msg.auto_receive_welcome(member.mention, role_assign_mention),
                 color=discord.Color.light_gray(),
             )
             embed.set_author(
@@ -91,7 +89,7 @@ class AutoReceive(commands.Cog):
                 try:
                     await member.add_roles(role)
                     try:
-                        await member.send(f"✅ Kamu bergabung dengan kubu **{role.name}**.")
+                        await member.send(Msg.faction_left(role.name))
                     except discord.Forbidden:
                         pass
                 except Exception as e:

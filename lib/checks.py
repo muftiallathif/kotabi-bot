@@ -1,28 +1,49 @@
 """
-lib/checks.py — Reusable VIP Access Control untuk Kotabi Bot
-=============================================================
+lib/checks.py — Reusable Access Control untuk Kotabi Bot
+=========================================================
 Semua role ID dibaca dari server_map.yml + membership_settings.yml via lib/config.py.
 TIDAK ada hardcode ID di sini. Kalau role berubah → cukup edit YAML.
 
 Penggunaan decorator:
-    from lib.checks import is_vip, is_premium, is_staff
+    from lib.checks import is_vip, is_premium, is_staff, is_authorized
 
     @app_commands.command(name='log', ...)
     @is_vip()
     async def log(self, interaction, ...):
 
+    @app_commands.command(name='post_db', ...)
+    @is_authorized()
+    async def post_db(self, interaction, ...):
+
 Penggunaan helper langsung (misal di non-slash context):
-    from lib.checks import has_vip_role
+    from lib.checks import has_vip_role, has_authorized_access
 
     if not has_vip_role(member):
         return
+
+    if not has_authorized_access(interaction.user):
+        return
 """
 
+import os
 import discord
 from discord import app_commands
 from typing import Optional
 
 from lib.config import get_vip_role_ids, get_paid_role_ids, get_staff_role_ids
+
+# ============================================================================
+# AUTHORIZED USER IDS
+# Dibaca dari env var AUTHORIZED_USERS — sama persis dengan pola di cog-cog
+# admin yang selama ini duplikasi baris ini sendiri-sendiri.
+# Single source of truth: ubah env var, semua cog ikut.
+# ============================================================================
+
+AUTHORIZED_USER_IDS: set[int] = {
+    int(uid)
+    for uid in os.getenv("AUTHORIZED_USERS", "").split(",")
+    if uid.strip()
+}
 
 # ============================================================================
 # PESAN ERROR — edit di sini jika teks perlu diubah, tidak perlu cari per-cog
@@ -45,14 +66,36 @@ MSG_PREMIUM_ONLY = (
     "Hubungi staf untuk mendaftar! 🙇‍♂️"
 )
 
-MSG_STAFF_ONLY = "❌ Anda tidak memiliki wewenang untuk menggunakan perintah ini."
-MSG_GUILD_ONLY = "❌ Perintah ini hanya dapat digunakan di dalam server."
+MSG_STAFF_ONLY      = "❌ Anda tidak memiliki wewenang untuk menggunakan perintah ini."
+MSG_AUTHORIZED_ONLY = "❌ Anda tidak memiliki wewenang untuk menjalankan perintah ini."
+MSG_GUILD_ONLY      = "❌ Perintah ini hanya dapat digunakan di dalam server."
 
 
 # ============================================================================
 # HELPER FUNCTIONS
 # Bisa dipanggil langsung tanpa decorator, misal di DynamicQuizMenu.callback
 # ============================================================================
+
+def has_authorized_access(user: discord.Member | discord.User) -> bool:
+    """
+    True jika user ada di AUTHORIZED_USER_IDS atau punya permission Administrator
+    di guild-nya.
+
+    Ini menggantikan fungsi _is_authorized() yang selama ini diduplikasi
+    di export_server.py, restructure_server.py, backup_discord_server.py,
+    database_backup.py, watchdog.py, dan sync.py.
+
+    Contoh:
+        if not has_authorized_access(interaction.user):
+            return await interaction.followup.send(MSG_AUTHORIZED_ONLY, ephemeral=True)
+    """
+    if user.id in AUTHORIZED_USER_IDS:
+        return True
+    # guild_permissions tersedia jika user adalah discord.Member (bukan User di DM)
+    if isinstance(user, discord.Member) and user.guild_permissions.administrator:
+        return True
+    return False
+
 
 def has_vip_role(member: discord.Member, guild_id: int = None) -> bool:
     """
@@ -128,6 +171,27 @@ def get_member_tier(member: discord.Member) -> Optional[str]:
 # APP COMMAND DECORATORS
 # ============================================================================
 
+def is_authorized():
+    """
+    Decorator slash command: user harus ada di AUTHORIZED_USER_IDS
+    atau punya permission Administrator.
+
+    Menggantikan _is_authorized() lokal di tiap cog admin.
+
+    Contoh:
+        @app_commands.command(name='post_db')
+        @is_authorized()
+        async def post_db(self, interaction):
+    """
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if has_authorized_access(interaction.user):
+            return True
+        await interaction.response.send_message(MSG_AUTHORIZED_ONLY, ephemeral=True)
+        return False
+
+    return app_commands.check(predicate)
+
+
 def is_vip():
     """
     Decorator slash command: user harus punya role VIP (termasuk trial).
@@ -181,9 +245,9 @@ def is_staff():
     Decorator slash command: user harus staff atau Administrator.
 
     Contoh:
-        @app_commands.command(name='post_db')
+        @app_commands.command(name='say message')
         @is_staff()
-        async def post_db(self, interaction):
+        async def say_message(self, interaction):
     """
     async def predicate(interaction: discord.Interaction) -> bool:
         member = interaction.user
