@@ -30,8 +30,18 @@ from lib.journey.models import (
 # (sama dengan logika di gatekeeper.py yang sudah ada)
 
 
-def _get_next_sunday_midnight(dt: datetime) -> datetime:
-    """Sama persis dengan get_next_sunday_midnight_from di gatekeeper.py."""
+def get_next_sunday_midnight(dt: datetime) -> datetime:
+    """
+    Satu-satunya sumber kebenaran untuk perhitungan reset cooldown mingguan
+    (Minggu tengah malam UTC berikutnya setelah `dt`).
+
+    Dipakai oleh:
+    - lib/journey/rules.py (calculate_quiz_availability, build_quiz_info)
+    - cogs/gatekeeper.py (is_on_cooldown, is_on_cooldown_create, register_quiz_attempt, dst)
+
+    JANGAN duplikasi logic ini di tempat lain. Kalau aturan cooldown berubah
+    (mis. dari mingguan ke per-72-jam), cukup ubah di sini.
+    """
     days_until_sunday = (6 - dt.weekday()) % 7
     if days_until_sunday == 0:
         days_until_sunday = 7
@@ -93,7 +103,7 @@ def calculate_quiz_availability(
         if now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
 
-        next_sunday = _get_next_sunday_midnight(last_attempt)
+        next_sunday = get_next_sunday_midnight(last_attempt)
         if now < next_sunday:
             return QuizAvailability.ON_COOLDOWN
 
@@ -122,7 +132,7 @@ def build_quiz_info(
         if last_attempt:
             if last_attempt.tzinfo is None:
                 last_attempt = last_attempt.replace(tzinfo=timezone.utc)
-            next_sunday = _get_next_sunday_midnight(last_attempt)
+            next_sunday = get_next_sunday_midnight(last_attempt)
             cooldown_until = int(next_sunday.timestamp())
 
     # require_role

@@ -64,14 +64,10 @@ class QuizInfo:
 
 @dataclass
 class AttemptEvent:
-    """
-    Satu entri di timeline attempt history user.
-    Dibuat dari data tabel quiz_attempts + passed_quizzes.
-    """
     quiz_name:  str
-    timestamp:  datetime
+    timestamp:  Optional[datetime]   # None = waktu tidak diketahui (no_timeout, lulus first-try)
     passed:     bool
-    score:      Optional[int] = None   # kalau tersedia dari API Kotoba
+    score:      Optional[int] = None
     max_score:  Optional[int] = None
 
 

@@ -17,6 +17,14 @@ from lib.messages import Msg                   # ← BARU: teks terpusat
 from core.bot import KotabiBot
 from lib.journey.service import JourneyService
 from lib.journey.models import NextActionType
+from lib.journey.rules import get_next_sunday_midnight
+
+from collections import deque
+
+VERIFY_WINDOW_SIZE = 20        # jumlah verifikasi terakhir yang dipantau
+VERIFY_FAIL_THRESHOLD = 0.85   # alert jika fail rate di window ini >= 85%
+VERIFY_MIN_SAMPLES = 10        # jangan alert sebelum window cukup terisi
+VERIFY_ALERT_COOLDOWN_MINUTES = 60
 
 _log = logging.getLogger("bot.gatekeeper")
 
@@ -79,6 +87,18 @@ ADD_USER_THREAD = """INSERT INTO user_threads (user_id, thread_id) VALUES (?, ?)
 ON CONFLICT(user_id) DO UPDATE SET thread_id = excluded.thread_id;"""
 
 GET_USER_THREAD = """SELECT thread_id FROM user_threads WHERE user_id = ?;"""
+
+CREATE_PROCESSED_QUIZ_REPORTS_TABLE = """CREATE TABLE IF NOT EXISTS processed_quiz_reports (
+    quiz_id TEXT PRIMARY KEY,
+    guild_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);"""
+
+INSERT_PROCESSED_QUIZ_REPORT = """INSERT OR IGNORE INTO processed_quiz_reports (quiz_id, guild_id, user_id)
+VALUES (?, ?, ?);"""
+
+IS_QUIZ_REPORT_PROCESSED = """SELECT 1 FROM processed_quiz_reports WHERE quiz_id = ?;"""
 
 
 def _get_rank_structure(guild_id: int) -> list:
@@ -256,15 +276,6 @@ async def timeout_member(member: discord.Member, duration_in_minutes: int, reaso
         pass
 
 
-def get_next_sunday_midnight_from(dt):
-    """Mendapatkan waktu hari Minggu tengah malam terdekat untuk masa riset cooldown mingguan."""
-    days_until_sunday = (6 - dt.weekday()) % 7
-    if days_until_sunday == 0:
-        days_until_sunday = 7
-    next_sunday = dt + timedelta(days=days_until_sunday)
-    next_sunday_midnight = datetime(next_sunday.year, next_sunday.month, next_sunday.day, 0, 0, 0, tzinfo=timezone.utc)
-    return next_sunday_midnight
-
 
 class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]], template=r"quizmenu-guild:(?P<guild_id>\d+)"):
     def __init__(self, levelup: "LevelUp", guild_id: int):
@@ -346,7 +357,13 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
             if not quiz_thread:
                 try:
                     quiz_thread = await interaction.guild.fetch_channel(thread_id)
-                except discord.NotFound:
+                except (discord.NotFound, discord.Forbidden):
+                    quiz_thread = None
+                except Exception as e:
+                    _log.warning(
+                        "Gagal fetch thread ujian lama %s untuk user %s: %s",
+                        thread_id, interaction.user.id, e
+                    )
                     quiz_thread = None
 
         if not quiz_thread:
@@ -392,17 +409,79 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
             view=jump_view,
             ephemeral=True
         )
+    
+    async def _track_verify_result(self, success: bool):
+        """
+        Catat hasil verify_quiz_settings ke window bergulir, dan kirim alert
+        ke DEBUG_USER kalau fail rate tiba-tiba melonjak — sinyal kemungkinan
+        Kotoba API berubah format, bukan murni kecurangan/nasib buruk user.
+        """
+        self._verify_results.append(success)
+
+        if len(self._verify_results) < VERIFY_MIN_SAMPLES:
+            return
+
+        fail_count = sum(1 for r in self._verify_results if not r)
+        fail_rate = fail_count / len(self._verify_results)
+
+        if fail_rate < VERIFY_FAIL_THRESHOLD:
+            return
+
+        now = utcnow()
+        if (
+            self._last_verify_alert
+            and (now - self._last_verify_alert) < timedelta(minutes=VERIFY_ALERT_COOLDOWN_MINUTES)
+        ):
+            return
+
+        self._last_verify_alert = now
+
+        debug_user_id = int(os.getenv("DEBUG_USER", 0)) or None
+        if not debug_user_id:
+            _log.warning(
+                "[verify_circuit_breaker] Fail rate %.0f%% dalam %d verifikasi terakhir, "
+                "tapi DEBUG_USER tidak diset — tidak ada yang bisa di-DM.",
+                fail_rate * 100, len(self._verify_results)
+            )
+            return
+
+        try:
+            user = self.bot.get_user(debug_user_id) or await self.bot.fetch_user(debug_user_id)
+            await user.send(
+                f"⚠️ **Circuit Breaker — Verifikasi Kuis**\n\n"
+                f"Fail rate **{fail_rate * 100:.0f}%** dalam {len(self._verify_results)} "
+                f"verifikasi kuis terakhir (ambang batas: {VERIFY_FAIL_THRESHOLD * 100:.0f}%).\n\n"
+                f"Kemungkinan penyebab:\n"
+                f"› Format respons Kotoba API berubah\n"
+                f"› Bug baru di `verify_quiz_settings`\n"
+                f"› (Kecil kemungkinan) lonjakan kecurangan riil\n\n"
+                f"Cek log `[level_up_routine]` untuk detail."
+            )
+        except Exception as e:
+            _log.warning("[verify_circuit_breaker] Gagal kirim alert DM: %s", e)
 
 
 class LevelUp(commands.Cog):
     def __init__(self, bot: KotabiBot):
         self.bot = bot
+        self._user_locks: dict[tuple[int, int], asyncio.Lock] = {}
+        self._verify_results: deque[bool] = deque(maxlen=VERIFY_WINDOW_SIZE)
+        self._last_verify_alert: Optional[datetime] = None
+
+    def _get_user_lock(self, guild_id: int, user_id: int) -> asyncio.Lock:
+        """Lock per (guild_id, user_id) — lazy-create, supaya satu user lulus
+        kuis tidak nge-block proses verifikasi user lain."""
+        key = (guild_id, user_id)
+        if key not in self._user_locks:
+            self._user_locks[key] = asyncio.Lock()
+        return self._user_locks[key]
 
     async def cog_load(self):
         """Inisialisasi database dan dynamic item menu kuis."""
         await self.bot.RUN(CREATE_QUIZ_ATTEMPTS_TABLE)
         await self.bot.RUN(CREATE_PASSED_QUIZZES_TABLE)
         await self.bot.RUN(CREATE_USER_THREADS_TABLE)
+        await self.bot.RUN(CREATE_PROCESSED_QUIZ_REPORTS_TABLE)
         self.bot.add_dynamic_items(DynamicQuizMenu)
 
     async def is_in_levelup_channel(self, message: discord.Message):
@@ -494,7 +573,7 @@ class LevelUp(commands.Cog):
         if isinstance(last_attempt_time, str):
             last_attempt_time = datetime.fromisoformat(last_attempt_time.replace("Z", "+00:00"))
 
-        next_sunday_midnight = get_next_sunday_midnight_from(last_attempt_time)
+        next_sunday_midnight = get_next_sunday_midnight(last_attempt_time)
         if utcnow() < next_sunday_midnight:
             unix_timestamp = int(next_sunday_midnight.timestamp())
             await message.channel.send(
@@ -507,7 +586,7 @@ class LevelUp(commands.Cog):
     async def register_quiz_attempt(self, member: discord.Member, channel: discord.TextChannel, quiz_name: str):
         """Mendaftarkan percobaan kuis tidak sukses ke dalam basis database."""
         await self.bot.RUN(ADD_QUIZ_ATTEMPT, (member.guild.id, member.id, quiz_name, utcnow().isoformat()))
-        next_sunday_midnight = get_next_sunday_midnight_from(utcnow())
+        next_sunday_midnight = get_next_sunday_midnight(utcnow())
         unix_timestamp = int(next_sunday_midnight.timestamp())
         await channel.send(
             f"📝 Percobaan ujian {member.mention} untuk kasta **{quiz_name}** telah resmi dicatat.\n"
@@ -670,19 +749,28 @@ class LevelUp(commands.Cog):
             return
         if not message.author.id == KOTOBA_BOT_ID and "k!q" not in message.content.lower():
             return
- 
+
         is_valid_command = await self.is_command_input_valid(message)
         if not is_valid_command:
             return
- 
+
         quiz_id = await get_quiz_id(message)
         if not quiz_id:
             return
- 
+
+        # ── IDEMPOTENCY FAST-PATH ────────────────────────────────
+        # Cegah pemrosesan ulang kalau event ter-trigger dua kali
+        # (Discord re-deliver pesan, watchdog reload cog di tengah
+        # proses, dsb). Klaim final tetap di INSERT OR IGNORE di
+        # bawah, ini cuma optimisasi supaya tidak hit Kotoba API lagi.
+        already_processed = await self.bot.GET_ONE(IS_QUIZ_REPORT_PROCESSED, (quiz_id,))
+        if already_processed:
+            _log.info("[level_up_routine] Quiz ID %s sudah pernah diproses, dilewati.", quiz_id)
+            return
+
         _log.info("[level_up_routine] Quiz ID ditemukan: %s, guild=%s", quiz_id, message.guild.id)
- 
+
         # ── PROCESSING FEEDBACK ──────────────────────────────────
-        # User tahu bot sedang bekerja, bukan diam
         processing_msg = await message.channel.send(
             "⚔️ Memverifikasi hasil ujian... harap tunggu sebentar."
         )
@@ -714,16 +802,131 @@ class LevelUp(commands.Cog):
                 await processing_msg.delete()
                 return
 
-            success, quiz_message = await verify_quiz_settings(quiz_data, quiz_result, member)
+            # ── LOCK PER-USER ─────────────────────────────────────
+            # Menutup window race condition antara cek role lama dan
+            # eksekusi reward_user. Per (guild, user), bukan global,
+            # supaya user lain tidak ikut nge-block.
+            user_lock = self._get_user_lock(message.guild.id, member.id)
+            async with user_lock:
 
-            _log.info(
-                "[level_up_routine] verify_quiz_settings → success=%s member=%s quiz='%s'",
-                success, member, quiz_data["name"]
-            )
+                # Klaim quiz_id ini sebagai "sedang/sudah diproses".
+                # Kalau ada proses lain yang menang duluan (race jarang
+                # tapi mungkin di antara fast-path check di atas dan
+                # baris ini), insert_result akan 0 → stop di sini.
+                insert_result = await self.bot.RUN(
+                    INSERT_PROCESSED_QUIZ_REPORT,
+                    (quiz_id, message.guild.id, member.id)
+                )
+                if insert_result == 0:
+                    _log.info(
+                        "[level_up_routine] Quiz ID %s diklaim proses lain, dilewati.",
+                        quiz_id
+                    )
+                    await processing_msg.delete()
+                    return
 
-            await processing_msg.delete()
-            processing_msg = None
- 
+                success, quiz_message = await verify_quiz_settings(quiz_data, quiz_result, member)
+
+                await self._track_verify_result(success)
+
+                _log.info(
+                    "[level_up_routine] verify_quiz_settings → success=%s member=%s quiz='%s'",
+                    success, member, quiz_data["name"]
+                )
+
+                await processing_msg.delete()
+                processing_msg = None
+
+                # ── LOGIC REWARD/FAIL ──────────────────────────────
+
+                if await self.already_owns_higher_or_same_role(quiz_data["rank_to_get"], member):
+                    return
+
+                if success and quiz_data.get("require_role"):
+                    required_ids = (
+                        quiz_data["require_role"]
+                        if isinstance(quiz_data["require_role"], list)
+                        else [quiz_data["require_role"]]
+                    )
+                    required_roles = [
+                        message.guild.get_role(rid) for rid in required_ids
+                        if message.guild.get_role(rid)
+                    ]
+                    if not any(role in member.roles for role in required_roles):
+                        mentions = ", ".join(role.mention for role in required_roles)
+                        await message.channel.send(
+                            f"⚠️ {member.mention}, kamu membutuhkan salah satu peran berikut: {mentions}",
+                            allowed_mentions=discord.AllowedMentions(roles=False),
+                        )
+                        return
+
+                # ── Ambil next action untuk embed ──────────────────
+                journey_svc = JourneyService(self.bot, gatekeeper_settings)
+                member_role_ids = {role.id for role in member.roles}
+
+                if success:
+                    role_earned = await self.reward_user(member, quiz_data)
+                    await self.send_in_announcement_channel(member, quiz_message)
+
+                    fresh_member = message.guild.get_member(member.id)
+                    if fresh_member:
+                        member_role_ids = {role.id for role in fresh_member.roles}
+
+                    next_action = await journey_svc.get_next_action(
+                        message.guild.id, member.id, member_role_ids, message.guild
+                    )
+
+                    from lib.config import get_channel_id
+                    quiz_channel_id = get_channel_id(message.guild.id, "quiz_rank_up")
+
+                    reward_embed = journey_svc.build_reward_embed(
+                        member=member,
+                        quiz_name=quiz_data["name"],
+                        role=role_earned,
+                        action=next_action,
+                        quiz_channel_id=quiz_channel_id,
+                    )
+                    await message.channel.send(embed=reward_embed)
+
+                    try:
+                        role_display = role_earned.name if role_earned else quiz_data["name"]
+                        await member.send(
+                            f"🎉 Selamat! Kamu berhasil lulus ujian kasta **{role_display}**!"
+                        )
+                    except discord.Forbidden:
+                        pass
+
+                else:
+                    wrong_indices = []
+                    if quiz_result.get("questions"):
+                        for i, q in enumerate(quiz_result["questions"], 1):
+                            scores = quiz_result.get("scores", [{}])
+                            if scores and q.get("answerers") is None:
+                                wrong_indices.append(i)
+
+                    if await self.rank_has_cooldown(message.guild.id, quiz_data["name"]):
+                        await self.register_quiz_attempt(member, message.channel, quiz_data["name"])
+
+                    next_action = await journey_svc.get_next_action(
+                        message.guild.id, member.id, member_role_ids, message.guild
+                    )
+
+                    failure_embed = journey_svc.build_failure_embed(
+                        member=member,
+                        quiz_name=quiz_data["name"],
+                        reason=quiz_message,
+                        action=next_action,
+                        wrong_indices=wrong_indices if wrong_indices else None,
+                    )
+                    await message.channel.send(embed=failure_embed)
+
+                    try:
+                        await member.send(
+                            f"🍂 Hasil ujian kuis **{quiz_data['name']}** belum berhasil: {quiz_message}"
+                        )
+                    except discord.Forbidden:
+                        pass
+
         except Exception as e:
             _log.exception("[level_up_routine] Error saat memproses quiz_id %s: %s", quiz_id, e)
             if processing_msg:
@@ -731,101 +934,6 @@ class LevelUp(commands.Cog):
                     content="❌ Terjadi kesalahan internal saat memproses hasil kuis. Hubungi admin."
                 )
             return
- 
-        # ── LOGIC REWARD/FAIL (sama seperti sebelumnya) ──────────
- 
-        if await self.already_owns_higher_or_same_role(quiz_data["rank_to_get"], member):
-            return
- 
-        if success and quiz_data.get("require_role"):
-            required_ids = (
-                quiz_data["require_role"]
-                if isinstance(quiz_data["require_role"], list)
-                else [quiz_data["require_role"]]
-            )
-            required_roles = [
-                message.guild.get_role(rid) for rid in required_ids
-                if message.guild.get_role(rid)
-            ]
-            if not any(role in member.roles for role in required_roles):
-                mentions = ", ".join(role.mention for role in required_roles)
-                await message.channel.send(
-                    f"⚠️ {member.mention}, kamu membutuhkan salah satu peran berikut: {mentions}",
-                    allowed_mentions=discord.AllowedMentions(roles=False),
-                )
-                return
- 
-        # ── Ambil next action untuk embed ────────────────────────
-        journey_svc = JourneyService(self.bot, gatekeeper_settings)
-        member_role_ids = {role.id for role in member.roles}
- 
-        if success:
-            role_earned = await self.reward_user(member, quiz_data)
-            await self.send_in_announcement_channel(member, quiz_message)
- 
-            # Ambil next action setelah state berubah (member sudah dapat role baru)
-            # Refresh role IDs karena baru saja berubah
-            fresh_member = message.guild.get_member(member.id)
-            if fresh_member:
-                member_role_ids = {role.id for role in fresh_member.roles}
- 
-            next_action = await journey_svc.get_next_action(
-                message.guild.id, member.id, member_role_ids, message.guild
-            )
- 
-            # Bangun embed reward dengan next action
-            # Sudah ada guild_id di sini, tinggal ambil channel_id
-            from lib.config import get_channel_id
-            quiz_channel_id = get_channel_id(message.guild.id, "quiz_rank_up")
-
-            reward_embed = journey_svc.build_reward_embed(
-                member=member,
-                quiz_name=quiz_data["name"],
-                role=role_earned,
-                action=next_action,
-                quiz_channel_id=quiz_channel_id,   # pass ke sini
-            )
-            await message.channel.send(embed=reward_embed)
- 
-            try:
-                role_display = role_earned.name if role_earned else quiz_data["name"]
-                await member.send(
-                    f"🎉 Selamat! Kamu berhasil lulus ujian kasta **{role_display}**!"
-                )
-            except discord.Forbidden:
-                pass
- 
-        else:
-            # Hitung wrong indices dari quiz_result
-            wrong_indices = []
-            if quiz_result.get("questions"):
-                for i, q in enumerate(quiz_result["questions"], 1):
-                    scores = quiz_result.get("scores", [{}])
-                    if scores and q.get("answerers") is None:
-                        wrong_indices.append(i)
- 
-            if await self.rank_has_cooldown(message.guild.id, quiz_data["name"]):
-                await self.register_quiz_attempt(member, message.channel, quiz_data["name"])
- 
-            next_action = await journey_svc.get_next_action(
-                message.guild.id, member.id, member_role_ids, message.guild
-            )
- 
-            failure_embed = journey_svc.build_failure_embed(
-                member=member,
-                quiz_name=quiz_data["name"],
-                reason=quiz_message,
-                action=next_action,
-                wrong_indices=wrong_indices if wrong_indices else None,
-            )
-            await message.channel.send(embed=failure_embed)
- 
-            try:
-                await member.send(
-                    f"🍂 Hasil ujian kuis **{quiz_data['name']}** belum berhasil: {quiz_message}"
-                )
-            except discord.Forbidden:
-                pass
 
     @discord.app_commands.command(name="reset_user_cooldown", description="Menyetel ulang masa tenggang (cooldown) kuis seorang warga (Khusus Admin).")
     @discord.app_commands.guild_only()
@@ -979,7 +1087,7 @@ class LevelUp(commands.Cog):
         if isinstance(last_attempt_time, str):
             last_attempt_time = datetime.fromisoformat(last_attempt_time.replace("Z", "+00:00"))
 
-        next_sunday_midnight = get_next_sunday_midnight_from(last_attempt_time)
+        next_sunday_midnight = get_next_sunday_midnight(last_attempt_time)
         if utcnow() < next_sunday_midnight:
             unix_timestamp = int(next_sunday_midnight.timestamp())
             cooldown_message = (

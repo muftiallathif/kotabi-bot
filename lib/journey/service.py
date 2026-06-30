@@ -133,23 +133,22 @@ class JourneyService:
         quizzes:      list[QuizInfo],
     ) -> list[AttemptEvent]:
         """
-        Bangun history events dari quiz_attempts.
-        Kuis yang lulus tapi tidak punya entri attempt (no_timeout, first-try)
-        tetap dimunculkan dengan timestamp sekarang sebagai placeholder.
+        Kuis no_timeout yang lulus first-try tidak punya baris di quiz_attempts,
+        jadi tidak ada timestamp asli. Daripada memalsukan now() (yang merusak
+        urutan kronologis), event ini ditandai timestamp=None dan SELALU
+        ditampilkan di akhir daftar, bukan diselipkan seolah baru terjadi.
         """
         events  = build_attempt_events(raw_history, passed_names)
         covered = {e.quiz_name for e in events}
 
-        now = datetime.now(timezone.utc)
-        for quiz in quizzes:
-            if quiz.is_passed and quiz.name not in covered:
-                events.append(AttemptEvent(
-                    quiz_name=quiz.name,
-                    timestamp=now,
-                    passed=True,
-                ))
+        unknown_time_events = [
+            AttemptEvent(quiz_name=quiz.name, timestamp=None, passed=True)
+            for quiz in quizzes
+            if quiz.is_passed and quiz.name not in covered
+        ]
 
-        return events
+        # events sudah terurut terbaru dulu (dari query DESC); unknown di akhir.
+        return events + unknown_time_events
 
     async def get_next_action(
         self,
@@ -377,7 +376,6 @@ class JourneyService:
         status: JourneyStatus,
         member: discord.Member,
     ) -> discord.Embed:
-        """Timeline riwayat ujian, terbaru di atas."""
         embed = discord.Embed(
             title=f"Riwayat Ujian — {member.display_name}",
             color=discord.Color.blurple(),
@@ -390,8 +388,11 @@ class JourneyService:
         lines = []
         for event in status.history[:20]:
             mark = "✅" if event.passed else "✗"
-            date = event.timestamp.strftime("%d %b %Y")
-            lines.append(f"`{date}`  {mark}  {event.quiz_name}")
+            if event.timestamp is not None:
+                date = event.timestamp.strftime("%d %b %Y")
+                lines.append(f"`{date}`  {mark}  {event.quiz_name}")
+            else:
+                lines.append(f"`tanggal tidak tercatat`  {mark}  {event.quiz_name}")
 
         embed.description = "\n".join(lines)
         shown = min(len(status.history), 20)
