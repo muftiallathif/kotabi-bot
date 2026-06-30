@@ -409,6 +409,21 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
             view=jump_view,
             ephemeral=True
         )
+
+class LevelUp(commands.Cog):
+    def __init__(self, bot: KotabiBot):
+        self.bot = bot
+        self._user_locks: dict[tuple[int, int], asyncio.Lock] = {}
+        self._verify_results: deque[bool] = deque(maxlen=VERIFY_WINDOW_SIZE)
+        self._last_verify_alert: Optional[datetime] = None
+
+    def _get_user_lock(self, guild_id: int, user_id: int) -> asyncio.Lock:
+        """Lock per (guild_id, user_id) — lazy-create, supaya satu user lulus
+        kuis tidak nge-block proses verifikasi user lain."""
+        key = (guild_id, user_id)
+        if key not in self._user_locks:
+            self._user_locks[key] = asyncio.Lock()
+        return self._user_locks[key]
     
     async def _track_verify_result(self, success: bool):
         """
@@ -459,22 +474,6 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
             )
         except Exception as e:
             _log.warning("[verify_circuit_breaker] Gagal kirim alert DM: %s", e)
-
-
-class LevelUp(commands.Cog):
-    def __init__(self, bot: KotabiBot):
-        self.bot = bot
-        self._user_locks: dict[tuple[int, int], asyncio.Lock] = {}
-        self._verify_results: deque[bool] = deque(maxlen=VERIFY_WINDOW_SIZE)
-        self._last_verify_alert: Optional[datetime] = None
-
-    def _get_user_lock(self, guild_id: int, user_id: int) -> asyncio.Lock:
-        """Lock per (guild_id, user_id) — lazy-create, supaya satu user lulus
-        kuis tidak nge-block proses verifikasi user lain."""
-        key = (guild_id, user_id)
-        if key not in self._user_locks:
-            self._user_locks[key] = asyncio.Lock()
-        return self._user_locks[key]
 
     async def cog_load(self):
         """Inisialisasi database dan dynamic item menu kuis."""
