@@ -30,18 +30,16 @@ AUTHORIZED_USER_IDS: set[int] = {
 
 MSG_VIP_ONLY = (
     "❌ Fitur ini hanya tersedia untuk **member VIP** Kerajaan Kotabi.\n\n"
-    "🎒 **Traveler** — Rp46.000 / bulan\n"
-    "🤝 **Companion** — Rp92.000 / bulan\n"
-    "📚 **Scholar** — Rp350.000 / bulan\n"
+    "🎒 **Traveler** — Rp40.000 / bulan\n"
+    "🤝 **Companion** — Rp80.000 / bulan\n"
     "👑 **Patron** — Seumur hidup\n\n"
     "Hubungi staf untuk mendaftar! 🙇‍♂️"
 )
 
 MSG_PREMIUM_ONLY = (
     "❌ Fitur ini hanya tersedia untuk **member berbayar** (bukan Trial).\n\n"
-    "🎒 **Traveler** — Rp46.000 / bulan\n"
-    "🤝 **Companion** — Rp92.000 / bulan\n"
-    "📚 **Scholar** — Rp350.000 / bulan\n\n"
+    "🎒 **Traveler** — Rp40.000 / bulan\n"
+    "🤝 **Companion** — Rp80.000 / bulan\n\n"
     "Hubungi staf untuk mendaftar! 🙇‍♂️"
 )
 
@@ -90,7 +88,8 @@ def get_member_tier(member: discord.Member) -> Optional[str]:
     gid = member.guild.id
     member_role_ids = {role.id for role in member.roles}
     vip_ids = get_vip_role_ids(gid)
-    tier_priority = ["patron", "scholar", "companion", "traveler", "trial"]
+    # "scholar" dihapus dari daftar — bukan tier v3 (lihat membership_settings.yml).
+    tier_priority = ["patron", "companion", "traveler", "trial"]
     for tier in tier_priority:
         if vip_ids.get(tier) in member_role_ids:
             return tier

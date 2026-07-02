@@ -70,12 +70,20 @@ products:
         tier: patron
         lifetime: true
       point:
-        amount: 30
+        # Disamakan dengan lifetime.point_threshold (60) di membership_settings.yml
+        # supaya /admin check-member tidak menampilkan progress poin yang
+        # janggal untuk member yang sudah lifetime lewat pembelian langsung.
+        # Tidak berpengaruh secara fungsional — lifetime sudah diset lewat
+        # grants.membership.lifetime, bukan lewat threshold poin ini.
+        amount: 60
 
   # ----------------------------------------------------------
   # KELAS INTENSIF
   # Bukan tier tersendiri — memberikan grant Companion dengan
-  # durasi lebih panjang sesuai paket kelas.
+  # durasi lebih panjang sesuai paket kelas. Detail nama kelas,
+  # biaya, durasi, dan silabus belum difinalisasi (lihat
+  # KOTABI_MEMBERSHIP_SYSTEM_v3.md bagian "Produk") — entri di
+  # bawah ini masih placeholder, tinggal disesuaikan tanpa ubah kode.
   # ----------------------------------------------------------
 
   jlpt_n5:

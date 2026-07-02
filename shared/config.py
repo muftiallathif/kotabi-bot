@@ -163,3 +163,7 @@ def get_channel_id(guild_id: int, channel_name: str) -> int:
 
 def get_all_channel_ids(guild_id: int, *channel_names: str) -> dict[str, int]:
     return {name: get_channel_id(guild_id, name) for name in channel_names}
+
+def get_bank_account_info() -> dict:
+    cfg = _load_membership_cfg()
+    return cfg.get("bank_account", {})

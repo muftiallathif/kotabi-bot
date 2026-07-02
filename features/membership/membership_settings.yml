@@ -1,11 +1,16 @@
 membership:
   guild_id: 1403184187669872650
 
+  bank_account:
+    holder: "MUFTI AL LATHIF"
+    bank_name: "Bank Mandiri"
+    account_number: "1350010180154"
+
   roles:
     trial:
       name: "【旅籠】 Trial Membership"
       role_id: 1518029306469548202
-      duration_days: 7
+      duration_days: 5
       price_rp: 0
       points: 0
 
@@ -13,27 +18,26 @@ membership:
       name: "【旅人】 Traveler"
       role_id: 1517031166279159848
       duration_days: 30
-      price_rp: 46000
+      price_rp: 40000
       points: 1
 
     companion:
       name: "【同胞】 Companion"
       role_id: 1517676769954762804
       duration_days: 30
-      price_rp: 92000
+      price_rp: 80000
       points: 2
 
-    intensive:
-      name: "【特待生】 Scholar"
-      role_id: 1518084701431140524
-      duration_days: 30
-      price_rp: 350000
-      points: 2
+    # "intensive" (Scholar recurring tier) dihapus — bukan tier tersendiri di v3.
+    # Kelas intensif sekarang murni lewat features/membership/products.yml
+    # (type: class, grants tier companion durasi lebih panjang), tanpa role
+    # atau entri tersendiri di sini. Role Discord "scholar" boleh tetap ada
+    # di server_map.yml, cuma tidak lagi dipakai sistem membership.
 
     lifetime:
       name: "【常連】 Patron"
       role_id: 1517718386002628608
-      point_threshold: 30
+      point_threshold: 60
 
   moderator_role_ids:
     - 1517801101959631009    # Royal Guard
@@ -42,9 +46,4 @@ membership:
   announcement_channel_id: 1403696014585495622
   order_review_channel_id: 1520559668185792533
   grace_period_days: 3
-  trial_duration_days: 7
-
-  trial:
-    reset_month_days:
-      - [1, 10]   # 10 Jan
-      - [9, 10]   # 10 Sep
+  trial_duration_days: 5

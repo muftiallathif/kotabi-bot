@@ -3,17 +3,22 @@ features/membership/scheduler_cog.py — Membership Scheduler v1
 =======================================================
 Background tasks yang berjalan otomatis:
 
-  Task 1 (setiap 30 menit) — sudah ada di admin_cog.py:
+  Task 1 (setiap 1 jam) — di sini:
+    - Draft timeout
+      → Draft (status='draft') yang belum dikonfirmasi user dalam
+        24 jam → auto-cancelled + notif user
+
+  Task 2 (setiap 30 menit) — sudah ada di admin_cog.py:
     - Membership expiry check
     - Warning H-3
     - Auto revoke expired
 
-  Task 2 (setiap 6 jam) — di sini:
+  Task 3 (setiap 6 jam) — di sini:
     - Pending order cleanup
       → Order pending > 3 hari → notif staff
       → Order pending > 7 hari → auto-cancel + notif user
 
-  Task 3 (setiap 24 jam) — di sini:
+  Task 4 (setiap 24 jam) — di sini:
     - Role sync
       → Bandingkan Discord role dengan database
       → Perbaiki yang tidak sinkron secara diam-diam
@@ -44,6 +49,9 @@ _log = logging.getLogger("bot.membership_scheduler")
 
 GUILD_ID        = get_membership_guild_id()
 ORDER_REVIEW_CH = get_order_review_channel_id()
+
+# Draft (belum dikonfirmasi user) lebih lama dari ini → auto-cancel
+DRAFT_TIMEOUT_HOURS = 24
 
 # Order pending lebih dari ini → notif staff
 PENDING_WARN_DAYS   = 3
@@ -79,6 +87,8 @@ class MembershipScheduler(commands.Cog):
         self.repo = MembershipRepository(bot)
 
     async def cog_load(self):
+        if not self.draft_timeout_check.is_running():
+            self.draft_timeout_check.start()
         if not self.pending_order_check.is_running():
             self.pending_order_check.start()
         if not self.role_sync_check.is_running():
@@ -86,8 +96,66 @@ class MembershipScheduler(commands.Cog):
         _log.info("MembershipScheduler tasks started.")
 
     def cog_unload(self):
+        self.draft_timeout_check.cancel()
         self.pending_order_check.cancel()
         self.role_sync_check.cancel()
+
+    # ============================================================
+    # TASK 1 — Draft Timeout (setiap 1 jam)
+    # ============================================================
+    # Draft yang dibuat >24 jam lalu dan belum pernah dikonfirmasi user
+    # (belum klik "Konfirmasi Order") -> auto-cancelled. Lihat
+    # KOTABI_MEMBERSHIP_SYSTEM_v3.md bagian "Draft Timeout".
+    #
+    # Sengaja HANYA menyasar status='draft' murni, BUKAN 'needs_resubmit' —
+    # order yang sedang menunggu upload ulang bukti sudah pernah dikonfirmasi
+    # sebelumnya dan tidak punya batas waktu 24 jam di desain v3 (lihat
+    # catatan di repository.py bagian _GET_DRAFT_ORDERS_OLDER_THAN).
+
+    @tasks.loop(hours=1)
+    async def draft_timeout_check(self):
+        try:
+            guild = self.bot.get_guild(GUILD_ID)
+            if not guild:
+                return
+
+            threshold = utcnow().replace(tzinfo=None) - timedelta(hours=DRAFT_TIMEOUT_HOURS)
+            stale_drafts = await self.repo.get_draft_orders_older_than(GUILD_ID, threshold)
+
+            for order in stale_drafts:
+                await self.repo.update_order_status(
+                    order_id=order.order_id,
+                    status="cancelled",
+                    notes=f"Auto-expired setelah {DRAFT_TIMEOUT_HOURS} jam tidak dikonfirmasi (draft timeout).",
+                )
+
+                dm_embed = discord.Embed(
+                    title="⏳ Draft Order Kedaluwarsa",
+                    description=(
+                        f"Draft order **{order.product_name}** (#{order.order_id}) kamu "
+                        f"otomatis dibatalkan karena tidak dikonfirmasi dalam "
+                        f"**{DRAFT_TIMEOUT_HOURS} jam**."
+                    ),
+                    color=discord.Color.light_grey(),
+                )
+                dm_embed.add_field(
+                    name="Info",
+                    value="Kalau masih mau lanjut, silakan mulai ulang lewat `/subscribe`.",
+                    inline=False,
+                )
+                await _send_dm(order.user_id, self.bot, dm_embed)
+
+                _log.info(
+                    "Auto-expired draft order #%d (draft_created_at=%s)",
+                    order.order_id, order.draft_created_at
+                )
+
+        except Exception as e:
+            _log.exception("Error di draft_timeout_check: %s", e)
+
+    @draft_timeout_check.before_loop
+    async def before_draft_timeout(self):
+        await self.bot.wait_until_ready()
 
     # ============================================================
     # TASK 2 — Pending Order Cleanup (setiap 6 jam)

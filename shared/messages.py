@@ -20,18 +20,16 @@ class Msg:
     # --- Access Control ---
     VIP_ONLY = (
         "❌ Fitur ini hanya tersedia untuk **member VIP** Kotabi Japanese.\n\n"
-        "🎒 **Traveler** — Rp46.000 / bulan\n"
-        "🤝 **Companion** — Rp92.000 / bulan\n"
-        "📚 **Scholar** — Rp350.000 / bulan\n"
+        "🎒 **Traveler** — Rp40.000 / bulan\n"
+        "🤝 **Companion** — Rp80.000 / bulan\n"
         "👑 **Patron** — Seumur hidup\n\n"
         "Hubungi staf untuk mendaftar! 🙇‍♂️"
     )
 
     PREMIUM_ONLY = (
         "❌ Fitur ini hanya tersedia untuk **member berbayar** (bukan Trial).\n\n"
-        "🎒 **Traveler** — Rp46.000 / bulan\n"
-        "🤝 **Companion** — Rp92.000 / bulan\n"
-        "📚 **Scholar** — Rp350.000 / bulan\n\n"
+        "🎒 **Traveler** — Rp40.000 / bulan\n"
+        "🤝 **Companion** — Rp80.000 / bulan\n\n"
         "Hubungi staf untuk mendaftar! 🙇‍♂️"
     )
 
@@ -103,7 +101,7 @@ class Msg:
     # --- Custom Role ---
     CUSTOM_ROLE_NO_PREMIUM = (
         "❌ Fitur kustomisasi peran hanya tersedia bagi donatur aktif "
-        "(**Patron**, **Scholar**, atau **Companion**)! Dukung server kami untuk membuka akses."
+        "(**Patron** atau **Companion**)! Dukung server kami untuk membuka akses."
     )
     CUSTOM_ROLE_INVALID_HEX  = "❌ Format kode warna Hex salah! Gunakan format standar seperti `#ff0055`."
     CUSTOM_ROLE_NOT_FOUND    = "❌ Anda belum memiliki peran kustom di server ini."
@@ -121,9 +119,8 @@ class Msg:
     # --- Gatekeeper ---
     GATEKEEPER_VIP_ONLY = (
         "❌ Sistem ujian kasta hanya tersedia untuk **member VIP**.\n\n"
-        "🎒 **Traveler** — Rp46.000 / bulan\n"
-        "🤝 **Companion** — Rp92.000 / bulan\n"
-        "📚 **Scholar** — Rp350.000 / bulan\n"
+        "🎒 **Traveler** — Rp40.000 / bulan\n"
+        "🤝 **Companion** — Rp80.000 / bulan\n"
         "👑 **Patron** — Seumur hidup\n\n"
         "Hubungi staf untuk mendaftar! 🙇‍♂️"
     )

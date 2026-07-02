@@ -1,22 +1,33 @@
 """
-features/membership/purchase_cog.py — Purchase Flow v1
-===============================================
+features/membership/purchase_cog.py — Purchase Flow v2 (rekening bank + bukti transfer)
+=========================================================================================
 Menangani alur pembelian membership dari sisi user dan staff.
 
-Flow:
+Flow (sesuai KOTABI_MEMBERSHIP_SYSTEM_v3.md):
     User /subscribe
         ↓
     Pilih produk + quantity
         ↓
-    Konfirmasi ringkasan + harga
+    Konfirmasi ringkasan + preview poin/expiry sebelum-sesudah
         ↓
-    Order dibuat (status: pending)
+    Order dibuat (status: draft) + kode unik nominal
         ↓
-    Embed review dikirim ke channel staff
+    Bot tampilkan detail rekening bank + total transfer (harga + kode unik)
+        ↓
+    User klik "Sudah Bayar" → isi bank pengirim → upload bukti transfer
+        ↓
+    Bot hitung perceptual hash (pHash) dari bukti
+        ↓
+    User klik "Konfirmasi Order" → draft -> pending
+        ↓
+    Embed review dikirim ke channel staff (+ warning anti-fraud kalau ada)
         ↓
     Admin klik Approve / Reject / Cancel
         ↓
-    GrantEngine.apply() dipanggil
+    Reject → pilih alasan: "Bukti tidak valid/buram" (needs_resubmit, order sama,
+             user upload ulang) atau "Lainnya" (rejected, final)
+        ↓
+    GrantEngine.apply() dipanggil (kalau Approve)
         ↓
     Discord role diupdate + DM ke user
 
@@ -24,21 +35,26 @@ Dipisah dari admin_cog.py supaya tidak melebihi 400 baris.
 """
 
 import asyncio
+import io
 import logging
 from datetime import datetime
 from typing import Optional
 
 import discord
+import imagehash
+from PIL import Image
 from discord.ext import commands
 from discord.utils import utcnow
 
 from core.bot import KotabiBot
+from features.membership.support.fraud_check import check_similar_proof
 from features.membership.support.grants.engine import GrantEngine
 from features.membership.support.models import Order
 from features.membership.support.product_loader import ProductLoader
 from features.membership.support.repository import MembershipRepository
 from features.membership.support.role_resolver import RoleResolver
 from shared.config import (
+    get_bank_account_info,
     get_lifetime_threshold,
     get_membership_guild_id,
     get_announcement_channel_id,
@@ -91,23 +107,37 @@ async def _send_dm(user_id: int, bot: KotabiBot, embed: discord.Embed) -> bool:
         return False
 
 
+async def _compute_phash(attachment: discord.Attachment) -> Optional[str]:
+    """Hitung perceptual hash dari gambar bukti transfer. Return None kalau gagal."""
+    try:
+        image_bytes = await attachment.read()
+        img = Image.open(io.BytesIO(image_bytes))
+        return str(imagehash.phash(img))
+    except Exception as e:
+        _log.warning("Gagal menghitung pHash bukti transfer: %s", e)
+        return None
+
+
 def _build_order_embed(
     order: Order,
     user: discord.User,
     status: str = "pending",
+    fraud_matches: Optional[list[tuple[int, int]]] = None,
 ) -> discord.Embed:
     """Buat embed untuk review order di channel staff."""
     color_map = {
-        "pending":  discord.Color.yellow(),
-        "approved": discord.Color.green(),
-        "rejected": discord.Color.red(),
-        "cancelled": discord.Color.light_grey(),
+        "pending":        discord.Color.yellow(),
+        "approved":       discord.Color.green(),
+        "rejected":       discord.Color.red(),
+        "cancelled":      discord.Color.light_grey(),
+        "needs_resubmit": discord.Color.orange(),
     }
     status_map = {
-        "pending":   "⏳ Menunggu Persetujuan",
-        "approved":  "✅ Disetujui",
-        "rejected":  "❌ Ditolak",
-        "cancelled": "🚫 Dibatalkan",
+        "pending":        "⏳ Menunggu Persetujuan",
+        "approved":       "✅ Disetujui",
+        "rejected":       "❌ Ditolak",
+        "cancelled":      "🚫 Dibatalkan",
+        "needs_resubmit": "🔁 Menunggu Upload Ulang",
     }
 
     embed = discord.Embed(
@@ -122,7 +152,19 @@ def _build_order_embed(
     if order.quantity > 1:
         embed.add_field(name="Quantity", value=f"{order.quantity}x", inline=True)
 
-    embed.add_field(name="Total",   value=_fmt_price(order.total_price),   inline=True)
+    embed.add_field(name="Harga", value=_fmt_price(order.total_price), inline=True)
+
+    if order.unique_code is not None:
+        embed.add_field(name="Kode Unik", value=f"+{order.unique_code}", inline=True)
+
+    embed.add_field(
+        name="💰 Total Seharusnya",
+        value=f"**{_fmt_price(order.total_price_with_unique_code)}**",
+        inline=True,
+    )
+
+    if order.sender_bank:
+        embed.add_field(name="Bank Pengirim", value=order.sender_bank, inline=True)
 
     if order.total_duration:
         embed.add_field(name="Durasi", value=f"{order.total_duration} hari", inline=True)
@@ -142,6 +184,17 @@ def _build_order_embed(
         grant_lines.append(f"Poin: **+{payload['point']['amount']}**")
     if grant_lines:
         embed.add_field(name="Grant", value="\n".join(grant_lines), inline=False)
+
+    if fraud_matches:
+        warn_lines = [f"⚠️ Mirip dengan Order #{oid} (jarak: {dist})" for oid, dist in fraud_matches]
+        embed.add_field(
+            name="⚠️ Peringatan Anti-Fraud",
+            value="\n".join(warn_lines) + "\n_Cek manual sebelum approve — ini bukan auto-reject._",
+            inline=False,
+        )
+
+    if order.payment_proof_url:
+        embed.set_image(url=order.payment_proof_url)
 
     if order.notes:
         embed.add_field(name="Catatan", value=order.notes, inline=False)
@@ -182,11 +235,14 @@ class OrderApprovalView(discord.ui.View):
 
     @discord.ui.button(label="❌ Reject", style=discord.ButtonStyle.danger)
     async def reject_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
         cog: MembershipPurchase = interaction.client.get_cog("MembershipPurchase")
         if not cog:
-            return await interaction.followup.send("❌ Cog tidak aktif.", ephemeral=True)
-        await cog.process_approval(interaction, self.order_id, "rejected")
+            return await interaction.response.send_message("❌ Cog tidak aktif.", ephemeral=True)
+        await interaction.response.send_message(
+            f"Pilih alasan penolakan untuk Order #{self.order_id}:",
+            view=RejectReasonView(cog, self.order_id),
+            ephemeral=True,
+        )
 
     @discord.ui.button(label="🚫 Cancel", style=discord.ButtonStyle.secondary)
     async def cancel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -198,7 +254,65 @@ class OrderApprovalView(discord.ui.View):
 
 
 # ============================================================
-# KONFIRMASI VIEW (tombol di /subscribe sebelum submit)
+# REJECT REASON VIEW — dropdown alasan penolakan (dua jalur)
+# ============================================================
+
+class RejectReasonView(discord.ui.View):
+    def __init__(self, cog: "MembershipPurchase", order_id: int):
+        super().__init__(timeout=120)
+        self.cog = cog
+        self.order_id = order_id
+
+    @discord.ui.select(
+        placeholder="Pilih alasan penolakan...",
+        options=[
+            discord.SelectOption(
+                label="Bukti tidak valid/buram",
+                value="invalid_proof",
+                description="Order TIDAK final — user diminta upload ulang bukti (kode unik sama).",
+                emoji="🔁",
+            ),
+            discord.SelectOption(
+                label="Lainnya (final)",
+                value="other",
+                description="Order ditolak permanen. User harus /subscribe baru kalau mau lanjut.",
+                emoji="❌",
+            ),
+        ],
+    )
+    async def select_reason(self, interaction: discord.Interaction, select: discord.ui.Select):
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.process_reject(interaction, self.order_id, select.values[0])
+        self.stop()
+
+
+# ============================================================
+# RESUBMIT VIEW — tombol "Upload Ulang Bukti" di DM needs_resubmit
+# ============================================================
+
+class ResubmitView(discord.ui.View):
+    """
+    Dikirim ke DM user saat order masuk status needs_resubmit.
+    Persistent (custom_id dari order_id) supaya tetap berfungsi setelah
+    bot restart — didaftarkan ulang di MembershipPurchase.cog_load().
+    """
+
+    def __init__(self, cog: "MembershipPurchase", order_id: int, user_id: int):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.order_id = order_id
+        self.user_id = user_id
+        self.reupload.custom_id = f"order_resubmit_{order_id}"
+
+    @discord.ui.button(label="🔄 Upload Ulang Bukti", style=discord.ButtonStyle.success)
+    async def reupload(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("❌ Bukan order kamu.", ephemeral=True)
+        await interaction.response.send_modal(SenderBankModal(self.cog, self.order_id))
+
+
+# ============================================================
+# KONFIRMASI VIEW (tombol di /subscribe sebelum lanjut ke rekening bank)
 # ============================================================
 
 class OrderConfirmView(discord.ui.View):
@@ -210,7 +324,7 @@ class OrderConfirmView(discord.ui.View):
         self.user_id    = user_id
         self.done       = False
 
-    @discord.ui.button(label="✅ Konfirmasi", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="✅ Lanjutkan", style=discord.ButtonStyle.success)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message(
@@ -219,7 +333,7 @@ class OrderConfirmView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         self.done = True
         self.stop()
-        await self.cog.submit_order(interaction, self.product_id, self.quantity)
+        await self.cog.create_draft_and_show_bank_info(interaction, self.product_id, self.quantity)
 
     @discord.ui.button(label="Batal", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -232,6 +346,93 @@ class OrderConfirmView(discord.ui.View):
         await interaction.response.edit_message(
             content="🚫 Order dibatalkan.", embed=None, view=None
         )
+
+
+# ============================================================
+# PAYMENT DETAIL VIEW (step rekening bank, sebelum bukti diupload)
+# ============================================================
+
+class PaymentDetailView(discord.ui.View):
+    """View di step 'rekening bank' — sebelum bukti transfer diupload."""
+
+    def __init__(self, cog: "MembershipPurchase", order_id: int, user_id: int):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.order_id = order_id
+        self.user_id = user_id
+
+    @discord.ui.button(label="✅ Sudah Bayar", style=discord.ButtonStyle.success)
+    async def sudah_bayar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("❌ Bukan order kamu.", ephemeral=True)
+        await interaction.response.send_modal(SenderBankModal(self.cog, self.order_id))
+
+    @discord.ui.button(label="🚫 Batalkan", style=discord.ButtonStyle.secondary)
+    async def batalkan(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("❌ Bukan order kamu.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.repo.update_order_status(self.order_id, "cancelled")
+        await interaction.followup.send("🚫 Order dibatalkan.", ephemeral=True)
+        self.stop()
+
+
+# ============================================================
+# MODAL — tanya bank/e-wallet pengirim sebelum upload bukti
+# ============================================================
+
+class SenderBankModal(discord.ui.Modal, title="Info Bukti Transfer"):
+    bank_name = discord.ui.TextInput(
+        label="Transfer dari Bank/E-wallet apa?",
+        placeholder="Contoh: BCA, Gopay, Mandiri, OVO...",
+        max_length=50,
+        required=True,
+    )
+
+    def __init__(self, cog: "MembershipPurchase", order_id: int):
+        super().__init__()
+        self.cog = cog
+        self.order_id = order_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.request_proof_upload(interaction, self.order_id, str(self.bank_name))
+
+
+# ============================================================
+# CONFIRM ORDER VIEW — setelah bukti transfer diupload
+# ============================================================
+
+class ConfirmOrderView(discord.ui.View):
+    def __init__(self, cog: "MembershipPurchase", order_id: int, user_id: int):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.order_id = order_id
+        self.user_id = user_id
+
+    @discord.ui.button(label="✅ Konfirmasi Order", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("❌ Bukan order kamu.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.finalize_order(interaction, self.order_id)
+        self.stop()
+
+    @discord.ui.button(label="📎 Upload Ulang", style=discord.ButtonStyle.secondary)
+    async def reupload(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("❌ Bukan order kamu.", ephemeral=True)
+        await interaction.response.send_modal(SenderBankModal(self.cog, self.order_id))
+        self.stop()
+
+    @discord.ui.button(label="🚫 Batalkan", style=discord.ButtonStyle.danger)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("❌ Bukan order kamu.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        await self.cog.repo.update_order_status(self.order_id, "cancelled")
+        await interaction.followup.send("🚫 Order dibatalkan.", ephemeral=True)
+        self.stop()
 
 
 # ============================================================
@@ -252,7 +453,18 @@ class MembershipPurchase(commands.Cog):
         pending = await self.repo.get_pending_orders(GUILD_ID)
         for order in pending:
             self.bot.add_view(OrderApprovalView(order.order_id))
-        _log.info("Registered %d persistent order views", len(pending))
+
+        # Daftarkan juga ResubmitView untuk order yang masih menunggu
+        # upload ulang bukti (needs_resubmit), supaya tombol "Upload Ulang
+        # Bukti" di DM lama tetap berfungsi setelah bot restart.
+        needs_resubmit = await self.repo.get_needs_resubmit_orders(GUILD_ID)
+        for order in needs_resubmit:
+            self.bot.add_view(ResubmitView(self, order.order_id, order.user_id))
+
+        _log.info(
+            "Registered %d persistent order views (%d pending, %d needs_resubmit)",
+            len(pending) + len(needs_resubmit), len(pending), len(needs_resubmit)
+        )
 
     # ----------------------------------------------------------
     # /subscribe
@@ -352,7 +564,7 @@ class MembershipPurchase(commands.Cog):
         product_id: str,
         quantity: int,
     ):
-        """Tampilkan ringkasan order sebelum konfirmasi."""
+        """Tampilkan ringkasan order + preview poin/expiry sebelum lanjut ke rekening bank."""
         product = self.loader.get(product_id)
         if not product:
             return await interaction.followup.send(
@@ -361,6 +573,10 @@ class MembershipPurchase(commands.Cog):
 
         payload  = product.build_grant_payload(quantity)
         duration = product.calculate_total_duration(quantity)
+
+        preview = await self.svc.preview_grant_payload(
+            interaction.guild_id, interaction.user.id, payload
+        )
 
         embed = discord.Embed(
             title="🛒 Konfirmasi Order",
@@ -377,6 +593,26 @@ class MembershipPurchase(commands.Cog):
         if quantity > 1:
             embed.add_field(name="Quantity", value=f"{quantity}x {product.quantity_label}", inline=True)
 
+        # Preview poin
+        point_line = f"{preview['point_before']} → **{preview['point_after']}**"
+        if preview["will_become_lifetime"]:
+            point_line += " 👑 (Auto jadi Patron!)"
+        embed.add_field(name="Progress Lifetime", value=point_line, inline=False)
+
+        # Preview masa aktif
+        if preview["is_lifetime"]:
+            embed.add_field(name="Masa Aktif", value="♾️ Lifetime — tidak ada expiry", inline=False)
+        else:
+            before_str = (
+                f"<t:{int(preview['expiry_before'].timestamp())}:D>"
+                if preview["expiry_before"] else "—"
+            )
+            after_str = (
+                f"<t:{int(preview['expiry_after'].timestamp())}:D>"
+                if preview["expiry_after"] else "—"
+            )
+            embed.add_field(name="Masa Aktif", value=f"{before_str} → **{after_str}**", inline=False)
+
         # Grant summary
         grant_lines = []
         if "membership" in payload:
@@ -390,7 +626,7 @@ class MembershipPurchase(commands.Cog):
         if grant_lines:
             embed.add_field(name="Yang Kamu Dapat", value="\n".join(grant_lines), inline=False)
 
-        embed.set_footer(text="Setelah konfirmasi, order akan diproses oleh admin.")
+        embed.set_footer(text="Setelah lanjut, kamu akan diarahkan ke detail rekening pembayaran.")
 
         view = OrderConfirmView(self, product_id, quantity, interaction.user.id)
 
@@ -399,46 +635,169 @@ class MembershipPurchase(commands.Cog):
         except discord.NotFound:
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
-    async def submit_order(
+    async def create_draft_and_show_bank_info(
         self,
         interaction: discord.Interaction,
         product_id: str,
         quantity: int,
     ):
-        """Simpan order ke database dan kirim embed ke channel staff."""
+        """Buat order berstatus draft (atau lanjutkan draft lama), lalu tampilkan
+        detail rekening + kode unik nominal."""
         product = self.loader.get(product_id)
         if not product:
             return await interaction.followup.send(
                 "❌ Produk tidak ditemukan.", ephemeral=True
             )
 
-        grant_payload = product.build_grant_payload(quantity)
-        total_duration = product.calculate_total_duration(quantity)
+        # Kalau user masih punya draft aktif, lanjutkan draft itu alih-alih bikin baru
+        existing_draft = await self.repo.get_user_draft_order(
+            interaction.guild_id, interaction.user.id
+        )
 
-        async with PURCHASE_LOCK:
-            order_id = await self.repo.create_order(
-                guild_id=interaction.guild_id,
-                user_id=interaction.user.id,
-                product_key=product.id,
-                product_version=product.version,
-                product_name=product.name,
-                price=product.price,
-                quantity=quantity,
-                total_duration=total_duration,
-                grant_payload=grant_payload,
+        if existing_draft:
+            order = existing_draft
+            order_id = order.order_id
+            _log.info(
+                "Melanjutkan draft order lama #%d untuk user=%d",
+                order_id, interaction.user.id
             )
+        else:
+            grant_payload = product.build_grant_payload(quantity)
+            total_duration = product.calculate_total_duration(quantity)
+
+            async with PURCHASE_LOCK:
+                order_id = await self.repo.create_draft_order(
+                    guild_id=interaction.guild_id,
+                    user_id=interaction.user.id,
+                    product_key=product.id,
+                    product_version=product.version,
+                    product_name=product.name,
+                    price=product.price,
+                    quantity=quantity,
+                    total_duration=total_duration,
+                    grant_payload=grant_payload,
+                )
+
+            order = await self.repo.get_order(order_id)
+            if not order:
+                return await interaction.followup.send(
+                    "❌ Gagal membuat order. Coba lagi.", ephemeral=True
+                )
+
+            _log.info(
+                "Draft order #%d dibuat: user=%d product=%s qty=%d",
+                order_id, interaction.user.id, product_id, quantity
+            )
+
+        bank_info = get_bank_account_info()
+
+        embed = discord.Embed(title="🏦 Detail Rekening Pembayaran", color=discord.Color.gold())
+        embed.add_field(name="Nama Penerima", value=bank_info.get("holder", "-"), inline=False)
+        embed.add_field(name="Bank", value=bank_info.get("bank_name", "-"), inline=True)
+        embed.add_field(name="No. Rekening", value=bank_info.get("account_number", "-"), inline=True)
+        embed.add_field(name="Harga", value=_fmt_price(order.total_price), inline=True)
+        embed.add_field(name="Kode Unik", value=f"+{order.unique_code}", inline=True)
+        embed.add_field(
+            name="Total Transfer",
+            value=f"**{_fmt_price(order.total_price_with_unique_code)}**",
+            inline=True,
+        )
+        embed.add_field(
+            name="Saran",
+            value="Isi keterangan transfer dengan nama Discord-mu kalau bisa.",
+            inline=False,
+        )
+        embed.set_footer(text=f"Order #{order_id} — Draft ini kedaluwarsa otomatis dalam 24 jam.")
+
+        await interaction.followup.send(
+            embed=embed,
+            view=PaymentDetailView(self, order_id, interaction.user.id),
+            ephemeral=True,
+        )
+
+    async def request_proof_upload(
+        self,
+        interaction: discord.Interaction,
+        order_id: int,
+        sender_bank: str,
+    ):
+        """Minta user upload gambar bukti transfer sebagai pesan biasa, tunggu maks 5 menit."""
+        await interaction.followup.send(
+            "📎 Silakan **kirim foto/screenshot bukti transfer** sebagai pesan di sini "
+            "(bukan lewat form ini) dalam **5 menit**.",
+            ephemeral=True,
+        )
+
+        def check(m: discord.Message) -> bool:
+            return (
+                m.author.id == interaction.user.id
+                and m.channel.id == interaction.channel_id
+                and len(m.attachments) > 0
+            )
+
+        try:
+            message = await self.bot.wait_for("message", check=check, timeout=300)
+        except asyncio.TimeoutError:
+            return await interaction.followup.send(
+                "⏳ Waktu upload bukti transfer habis. Gunakan tombol **Sudah Bayar** lagi untuk mencoba ulang.",
+                ephemeral=True,
+            )
+
+        attachment = message.attachments[0]
+        if not (attachment.content_type or "").startswith("image/"):
+            return await interaction.followup.send(
+                "❌ File yang dikirim bukan gambar. Gunakan tombol **Sudah Bayar** lagi untuk mencoba ulang.",
+                ephemeral=True,
+            )
+
+        phash = await _compute_phash(attachment)
+        await self.repo.attach_payment_proof(order_id, attachment.url, sender_bank, phash)
+
+        try:
+            await message.add_reaction("✅")
+        except discord.Forbidden:
+            pass
 
         order = await self.repo.get_order(order_id)
         if not order:
-            return await interaction.followup.send(
-                "❌ Gagal membuat order. Coba lagi.", ephemeral=True
+            return await interaction.followup.send("❌ Order tidak ditemukan.", ephemeral=True)
+
+        embed = discord.Embed(
+            title="📎 Bukti Transfer Diterima",
+            description=(
+                f"Order **#{order_id} — {order.product_name}**\n"
+                f"Bank/E-wallet pengirim: **{sender_bank}**\n\n"
+                "Periksa gambar di bawah, lalu klik **Konfirmasi Order** untuk mengirim ke staf."
+            ),
+            color=discord.Color.blurple(),
+        )
+        embed.set_image(url=attachment.url)
+
+        await interaction.followup.send(
+            embed=embed,
+            view=ConfirmOrderView(self, order_id, interaction.user.id),
+            ephemeral=True,
+        )
+
+    async def finalize_order(self, interaction: discord.Interaction, order_id: int):
+        """draft/needs_resubmit -> pending, cek fraud, kirim embed review ke channel staff."""
+        async with PURCHASE_LOCK:
+            await self.repo.confirm_order(order_id)
+
+        order = await self.repo.get_order(order_id)
+        if not order:
+            return await interaction.followup.send("❌ Order tidak ditemukan.", ephemeral=True)
+
+        fraud_matches = []
+        if order.payment_phash:
+            fraud_matches = await check_similar_proof(
+                self.repo, order.guild_id, order_id, order.payment_phash
             )
 
-        # Kirim embed ke channel staff
         guild        = interaction.guild
-        review_ch    = guild.get_channel(ORDER_REVIEW_CH)
+        review_ch    = guild.get_channel(ORDER_REVIEW_CH) if guild else None
         user         = interaction.user
-        order_embed  = _build_order_embed(order, user, status="pending")
+        order_embed  = _build_order_embed(order, user, status="pending", fraud_matches=fraud_matches)
         approval_view = OrderApprovalView(order_id)
 
         if review_ch:
@@ -450,29 +809,30 @@ class MembershipPurchase(commands.Cog):
 
         # Konfirmasi ke user
         await interaction.followup.send(
-            f"✅ **Order #{order_id} berhasil dibuat!**\n\n"
+            f"✅ **Order #{order_id} dikonfirmasi!**\n\n"
             f"Order kamu sedang menunggu persetujuan admin.\n"
             f"Kamu akan mendapat DM setelah order diproses.\n\n"
-            f"**{product.name}** — {_fmt_price(product.price * quantity)}",
+            f"**{order.product_name}** — {_fmt_price(order.total_price)}",
             ephemeral=True,
         )
 
         _log.info(
-            "Order #%d dibuat: user=%d product=%s qty=%d",
-            order_id, interaction.user.id, product_id, quantity
+            "Order #%d dikonfirmasi (->pending): user=%d product=%s",
+            order_id, interaction.user.id, order.product_key
         )
 
     # ----------------------------------------------------------
-    # PROCESS APPROVAL (dipanggil dari OrderApprovalView)
+    # PROCESS APPROVAL (dipanggil dari OrderApprovalView — approve/cancel)
     # ----------------------------------------------------------
 
     async def process_approval(
         self,
         interaction: discord.Interaction,
         order_id: int,
-        action: str,   # approved | rejected | cancelled
+        action: str,   # approved | cancelled
     ):
-        """Proses tombol approve/reject/cancel dari staff."""
+        """Proses tombol approve/cancel dari staff. Reject ditangani terpisah
+        lewat process_reject() karena punya dua jalur (needs_resubmit vs final)."""
         # Cek izin
         member = interaction.guild.get_member(interaction.user.id)
         if not member or not member.guild_permissions.manage_guild:
@@ -572,21 +932,6 @@ class MembershipPurchase(commands.Cog):
                 dm_embed.add_field(name="Order ID", value=f"#{order_id}", inline=True)
                 await _send_dm(order.user_id, self.bot, dm_embed)
 
-            elif action == "rejected":
-                # DM ke user
-                dm_embed = discord.Embed(
-                    title="❌ Order Ditolak",
-                    description=f"Order **{order.product_name}** kamu ditolak oleh admin.",
-                    color=discord.Color.red(),
-                )
-                dm_embed.add_field(name="Order ID", value=f"#{order_id}", inline=True)
-                dm_embed.add_field(
-                    name="Info",
-                    value="Hubungi admin jika ada pertanyaan.",
-                    inline=False,
-                )
-                await _send_dm(order.user_id, self.bot, dm_embed)
-
             elif action == "cancelled":
                 # DM ke user
                 dm_embed = discord.Embed(
@@ -600,6 +945,7 @@ class MembershipPurchase(commands.Cog):
         # Update embed di channel staff
         try:
             user_obj   = self.bot.get_user(order.user_id) or await self.bot.fetch_user(order.user_id)
+            order      = await self.repo.get_order(order_id)  # refresh state
             new_embed  = _build_order_embed(order, user_obj, status=action)
             # Disable semua tombol
             disabled_view = discord.ui.View()
@@ -607,7 +953,7 @@ class MembershipPurchase(commands.Cog):
         except Exception as e:
             _log.error("Gagal update embed order #%d: %s", order_id, e)
 
-        action_str = {"approved": "✅ Disetujui", "rejected": "❌ Ditolak", "cancelled": "🚫 Dibatalkan"}
+        action_str = {"approved": "✅ Disetujui", "cancelled": "🚫 Dibatalkan"}
         await interaction.followup.send(
             f"Order #{order_id} — **{action_str.get(action, action)}**",
             ephemeral=True,
@@ -616,6 +962,116 @@ class MembershipPurchase(commands.Cog):
         _log.info(
             "Order #%d %s oleh %s (%d)",
             order_id, action, interaction.user.name, interaction.user.id
+        )
+
+    # ----------------------------------------------------------
+    # PROCESS REJECT (dua jalur — dipanggil dari RejectReasonView)
+    # ----------------------------------------------------------
+
+    async def process_reject(
+        self,
+        interaction: discord.Interaction,
+        order_id: int,
+        reason_type: str,   # invalid_proof | other
+    ):
+        """
+        Jalur A ("invalid_proof"): order TIDAK final ditolak — status jadi
+        needs_resubmit, user diberi tombol "Upload Ulang Bukti" (nominal &
+        kode unik tetap sama, tidak perlu transfer ulang).
+
+        Jalur B ("other"): order final ditolak (rejected). Order immutable
+        setelahnya — user harus /subscribe baru kalau masih mau lanjut.
+        """
+        member = interaction.guild.get_member(interaction.user.id) if interaction.guild else None
+        if not member or not member.guild_permissions.manage_guild:
+            return await interaction.followup.send(
+                "❌ Kamu tidak punya izin untuk ini.", ephemeral=True
+            )
+
+        order = await self.repo.get_order(order_id)
+        if not order:
+            return await interaction.followup.send(
+                f"❌ Order #{order_id} tidak ditemukan.", ephemeral=True
+            )
+        if order.status != "pending":
+            return await interaction.followup.send(
+                f"❌ Order #{order_id} sudah berstatus **{order.status}**.", ephemeral=True
+            )
+
+        async with PURCHASE_LOCK:
+            if reason_type == "invalid_proof":
+                await self.repo.mark_needs_resubmit(
+                    order_id,
+                    "Bukti transfer tidak valid/buram — menunggu upload ulang dari user.",
+                )
+            else:
+                await self.repo.update_order_status(
+                    order_id=order_id,
+                    status="rejected",
+                    approved_by=interaction.user.id,
+                    reject_reason_type="other",
+                )
+
+        order = await self.repo.get_order(order_id)  # refresh state
+
+        if reason_type == "invalid_proof":
+            dm_embed = discord.Embed(
+                title="🔁 Bukti Transfer Perlu Diupload Ulang",
+                description=(
+                    f"Order **{order.product_name}** (#{order_id}) kamu ditolak sementara "
+                    f"karena bukti transfer tidak valid/buram.\n\n"
+                    f"Kamu **tidak perlu transfer ulang** — nominal dan kode unik tetap sama. "
+                    f"Klik tombol di bawah untuk upload bukti yang lebih jelas."
+                ),
+                color=discord.Color.orange(),
+            )
+            dm_embed.add_field(name="Total Transfer", value=_fmt_price(order.total_price_with_unique_code), inline=True)
+            dm_embed.add_field(name="Kode Unik", value=f"+{order.unique_code}", inline=True)
+
+            try:
+                user_obj = self.bot.get_user(order.user_id) or await self.bot.fetch_user(order.user_id)
+                if not user_obj.dm_channel:
+                    await user_obj.create_dm()
+                view = ResubmitView(self, order_id, order.user_id)
+                await user_obj.send(embed=dm_embed, view=view)
+                self.bot.add_view(view)
+            except (discord.Forbidden, discord.NotFound):
+                _log.warning("Tidak bisa DM user %s untuk resubmit order #%d", order.user_id, order_id)
+
+            status_for_embed = "needs_resubmit"
+            status_label = "🔁 Perlu Upload Ulang"
+        else:
+            dm_embed = discord.Embed(
+                title="❌ Order Ditolak",
+                description=f"Order **{order.product_name}** (#{order_id}) kamu ditolak oleh admin.",
+                color=discord.Color.red(),
+            )
+            dm_embed.add_field(
+                name="Info",
+                value="Hubungi admin jika ada pertanyaan, atau buat order baru lewat `/subscribe`.",
+                inline=False,
+            )
+            await _send_dm(order.user_id, self.bot, dm_embed)
+
+            status_for_embed = "rejected"
+            status_label = "❌ Ditolak (Final)"
+
+        # Update embed di channel staff
+        try:
+            user_obj = self.bot.get_user(order.user_id) or await self.bot.fetch_user(order.user_id)
+            new_embed = _build_order_embed(order, user_obj, status=status_for_embed)
+            disabled_view = discord.ui.View()
+            await interaction.message.edit(embed=new_embed, view=disabled_view)
+        except Exception as e:
+            _log.error("Gagal update embed order #%d: %s", order_id, e)
+
+        await interaction.followup.send(
+            f"Order #{order_id} — **{status_label}**", ephemeral=True
+        )
+
+        _log.info(
+            "Order #%d reject (%s) oleh %s (%d)",
+            order_id, reason_type, interaction.user.name, interaction.user.id
         )
 
     # ----------------------------------------------------------
@@ -647,7 +1103,7 @@ class MembershipPurchase(commands.Cog):
                 name=f"#{order.order_id} — {order.product_name}",
                 value=(
                     f"User: <@{order.user_id}>\n"
-                    f"Total: {_fmt_price(order.total_price)}\n"
+                    f"Total Seharusnya: {_fmt_price(order.total_price_with_unique_code)}\n"
                     f"Dibuat: <t:{created_ts}:R>"
                 ),
                 inline=False,
@@ -683,10 +1139,12 @@ class MembershipPurchase(commands.Cog):
             color=discord.Color.blurple(),
         )
         status_emoji = {
-            "pending":   "⏳",
-            "approved":  "✅",
-            "rejected":  "❌",
-            "cancelled": "🚫",
+            "draft":           "📝",
+            "pending":         "⏳",
+            "needs_resubmit":  "🔁",
+            "approved":        "✅",
+            "rejected":        "❌",
+            "cancelled":       "🚫",
         }
         for order in orders:
             created_ts = int(order.created_at.timestamp()) if order.created_at else 0
@@ -695,7 +1153,7 @@ class MembershipPurchase(commands.Cog):
                 name=f"#{order.order_id} — {order.product_name}",
                 value=(
                     f"{emoji} **{order.status.capitalize()}**\n"
-                    f"Total: {_fmt_price(order.total_price)}\n"
+                    f"Total: {_fmt_price(order.total_price_with_unique_code)}\n"
                     f"<t:{created_ts}:R>"
                 ),
                 inline=False,

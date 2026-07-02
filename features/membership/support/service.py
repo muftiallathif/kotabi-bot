@@ -132,11 +132,15 @@ class MembershipService:
         tier_before   = existing.tier        if existing else None
         expiry_before = existing.expires_at  if existing else None
 
-        # Hitung point baru (tidak boleh melebihi threshold jika sudah lifetime)
+        # Hitung point baru — dibatasi maksimal `threshold` (60), tidak boleh
+        # lebih. Poin adalah indikator loyalitas menuju lifetime, bukan mata
+        # uang yang boleh menumpuk lewat cap; lihat KOTABI_MEMBERSHIP_SYSTEM_v3.md
+        # bagian "Kenapa threshold poin 60" — membeli lebih banyak dari yang
+        # dibutuhkan untuk mencapai threshold tidak menambah poin lagi.
         if existing and existing.is_lifetime:
             point_after = existing.point_count  # frozen
         else:
-            point_after = min(point_before + point_amount, threshold + 99)
+            point_after = min(point_before + point_amount, threshold)
 
         # Hitung expiry baru
         if lifetime:
@@ -264,6 +268,83 @@ class MembershipService:
             order_id=order_id,
             lifetime=lifetime,
         )
+
+    # ----------------------------------------------------------
+    # PREVIEW GRANT — read-only, dipakai di step ringkasan /subscribe
+    # ----------------------------------------------------------
+
+    async def preview_grant_payload(
+        self,
+        guild_id:      int,
+        user_id:       int,
+        grant_payload: dict,
+    ) -> dict:
+        """
+        Hitung apa yang AKAN terjadi kalau grant_payload ini diproses,
+        pakai rule yang sama persis dengan grant() (expiry_baru = max(expiry_lama,
+        sekarang) + durasi, poin dibatasi maksimal threshold), TAPI tidak
+        menulis apa pun ke database. Murni untuk ditampilkan di step ringkasan
+        order sebelum user diarahkan ke rekening bank.
+
+        Return dict:
+            {
+                "tier": str,
+                "is_lifetime": bool,
+                "point_before": int,
+                "point_after": int,
+                "expiry_before": Optional[datetime],
+                "expiry_after": Optional[datetime],   # None kalau lifetime
+                "will_become_lifetime": bool,
+            }
+        """
+        now = datetime.utcnow()
+        threshold = get_lifetime_threshold()
+
+        m = grant_payload.get("membership", {})
+        p = grant_payload.get("point", {})
+
+        tier          = m.get("tier", "traveler")
+        lifetime      = m.get("lifetime", False)
+        duration_days = m.get("duration_days") if not lifetime else None
+        point_amount  = p.get("amount", 0)
+
+        existing = await self.repo.get_membership(guild_id, user_id)
+        point_before  = existing.point_count if existing else 0
+        expiry_before = existing.expires_at  if existing else None
+
+        if existing and existing.is_lifetime:
+            point_after = existing.point_count
+            expiry_after = None
+            will_become_lifetime = False
+            is_lifetime = True
+        elif lifetime:
+            point_after = min(point_before + point_amount, threshold)
+            expiry_after = None
+            will_become_lifetime = False
+            is_lifetime = True
+        else:
+            point_after = min(point_before + point_amount, threshold)
+            base = max(
+                existing.expires_at if (existing and existing.expires_at and existing.active) else now,
+                now
+            )
+            expiry_after = base + timedelta(days=duration_days or 0)
+            will_become_lifetime = point_after >= threshold
+            is_lifetime = will_become_lifetime
+
+            if will_become_lifetime:
+                expiry_after = None
+                tier = "patron"
+
+        return {
+            "tier": tier,
+            "is_lifetime": is_lifetime,
+            "point_before": point_before,
+            "point_after": point_after,
+            "expiry_before": expiry_before,
+            "expiry_after": expiry_after,
+            "will_become_lifetime": will_become_lifetime,
+        }
 
     # ----------------------------------------------------------
     # TRIAL
