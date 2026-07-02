@@ -1,0 +1,123 @@
+# shared/server_map.yml — Satu-satunya sumber ID role & channel Discord.
+# Kalau ID berubah di Discord, cukup edit di sini. JANGAN hardcode ID di kode.
+
+channels:
+  # --- STAFF AREA ---
+  staff_chat: 1403191211652681841
+  order_review: 1520559668185792533
+
+  # --- SERVER INFO ---
+  welcome_and_rules: 1403190517373735003
+  announcement: 1403696014585495622
+  channel_guide: 1517329376235098184
+  join_log: 1403184188148027506
+  role_assign: 1517328466780098580
+
+  # --- KOTABI SYSTEM ---
+  rank_guide: 1516670290753749072
+  immersion_bot_info: 1517328705112899615
+  self_mute_info: 1517328998563184720
+  membership: 1517329671338070076
+  honor_board: 1515633144525754429
+  bot_commands: 1516670400090607657
+
+  # --- JAPANESE AREA ---
+  homework_help: 1517365651759562782
+  jlpt_study_group: 1403184188148027507
+  today_i_learned: 1403184188148027509
+  immersion_log: 1516671526345113671
+
+  # --- COMMUNITY ---
+  general: 1517331849884471448
+  jp_general: 1517331867131707504
+  off_topic: 1517365902205522002
+
+  # --- MEMBER LIBRARY ---
+  grammar_dic: 1517829911031582750
+  kotoba_dic: 1517829941268447302
+  kanji_dic: 1517830003226574958
+
+  # --- MEMBER AREA ---
+  member_lounge: 1517830303840997441
+  deck_requests: 1517830332315996190
+  immersion_race: 1517830350313750618
+
+  # --- QUIZ HALL ---
+  quiz_rank_up: 1517023518984896564
+  quiz_public_1: 1404383455898501204
+  quiz_public_2: 1516017411231580200
+  quiz_public_3: 1517023365947199508
+
+  # --- VOICE HALL ---
+  lounge: 1403184188496019599
+  study_room_1: 1403184188496019600
+  study_room_2: 1403184188496019601
+
+roles:
+  # --- KEKUASAAN ABSOLUT & SYSTEM ---
+  kotabi_dono: 1516693143917957153
+  hidden_sovereign: 1517762274851295383
+  bot: 1404228566257897485
+  everyone: 1403184187669872650
+
+  # --- PUNCAK KEKUASAAN ---
+  emperor: 1516000555070394368
+  overlord: 1516000520521650247
+  high_king: 1516000507414577173
+  prince_elector: 1516000372441874452
+
+  # --- KASTA KUIS UTAMA (JLPT PROGRESS) ---
+  duke: 1404219327833444362
+  junior_duke: 1515999731355222136
+  marquess: 1404219483727331379
+  junior_marquess: 1515999289388699779
+  count: 1404219539113246854
+  junior_count: 1515999058915758090
+  viscount: 1404219560248348772
+  junior_viscount: 1515998740203180202
+  baron: 1515998513807495248
+  baronet: 1404219557333303419
+
+  # --- DASAR & WARGA ---
+  knight: 1515998050336641117
+  commoner: 1515997732966502441
+  drifter: 1518939950987612292
+
+  # --- DONATUR VIP ---
+  patron: 1517718386002628608
+  scholar: 1518084701431140524
+  companion: 1517676769954762804
+  traveler: 1517031166279159848
+  trial: 1518029306469548202
+
+  # --- JULUKAN SPESIAL ---
+  flash_reader: 1517799150949896282
+  unyielding_soul: 1517799289726697653
+  polymath: 1517799373516439805
+  night_owl: 1517799466160226397
+  win_streak_king: 1517799632275771512
+  collector: 1517799722142793949
+  omniscient: 1517799791491420282
+  doomsday_witness: 1517799866229854388
+
+  # --- KUBU MINAT (FACTIONS) ---
+  faction_anime: 1517800034345816084
+  faction_bookworm: 1517800137202733057
+  faction_gamer: 1517800323689746504
+  faction_music: 1517800395387174953
+  faction_history: 1517800454262751293
+  faction_kaiwa: 1517800621141528777
+  faction_stream: 1517800669485076581
+  faction_translator: 1517800769041072261
+
+  # --- SISTEM KEAKTIFAN (LEVELING) ---
+  level_bard: 1517800830802067636
+  level_adventurer: 1517800883826462740
+  level_lorekeeper: 1517800932702814318
+  level_scholar: 1517800997299163288
+  level_grand_sage: 1517801047937122314
+
+  # --- FUNGSIONAL STAFF ---
+  royal_guard: 1517801101959631009
+  prime_minister: 1517801149191819427
+  staff_court_artist: 1517801214639865908

@@ -1,1 +1,0 @@
-# lib/membership/__init__.py
