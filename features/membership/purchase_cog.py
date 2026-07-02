@@ -61,6 +61,7 @@ from shared.config import (
     get_order_review_channel_id,
 )
 from features.membership.support.service import MembershipService
+from shared.messages import Msg
 
 _log = logging.getLogger("bot.membership_purchase")
 
@@ -478,8 +479,13 @@ class MembershipPurchase(commands.Cog):
     async def subscribe(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
+        existing = await self.svc.get_membership(interaction.guild_id, interaction.user.id)
+        if existing and existing.is_lifetime:
+            return await interaction.followup.send(Msg.PATRON_ALREADY_LIFETIME, ephemeral=True)
+
         # Ambil semua produk yang bisa dibeli
         products = self.loader.get_subscribable()
+        
         if not products:
             return await interaction.followup.send(
                 "❌ Tidak ada produk tersedia saat ini.", ephemeral=True

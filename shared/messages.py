@@ -32,6 +32,11 @@ class Msg:
         "🤝 **Companion** — Rp80.000 / bulan\n\n"
         "Hubungi staf untuk mendaftar! 🙇‍♂️"
     )
+    
+    PATRON_ALREADY_LIFETIME = (
+        "👑 Kamu sudah menjadi **Patron (Lifetime)** dan mendapat akses penuh selamanya.\n"
+        "Tidak perlu berlangganan lagi!"
+    )
 
     STAFF_ONLY      = "❌ Anda tidak memiliki wewenang untuk menggunakan perintah ini."
     GUILD_ONLY      = "❌ Perintah ini hanya dapat digunakan di dalam server."

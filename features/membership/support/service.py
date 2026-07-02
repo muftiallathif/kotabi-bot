@@ -382,19 +382,13 @@ class MembershipService:
     async def revoke(
         self,
         guild_id: int,
-        user_id:  int,
-        actor:    Optional[int],
-        reason:   Optional[str] = None,
+        user_id: int,
+        actor: Optional[int],
+        reason: Optional[str] = None,
     ) -> RevokeResult:
-        """
-        Cabut membership. Tidak berlaku untuk lifetime member.
-        Validasi (apakah lifetime) dilakukan sebelum memanggil ini.
-        """
         existing = await self.repo.get_membership(guild_id, user_id)
         if not existing:
             raise ValueError("Membership tidak ditemukan.")
-        if existing.is_lifetime:
-            raise ValueError("Lifetime member tidak bisa di-revoke.")
 
         await self.repo.revoke_membership(guild_id, user_id)
 

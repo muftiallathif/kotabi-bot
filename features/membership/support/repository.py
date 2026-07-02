@@ -85,8 +85,9 @@ WHERE guild_id = ? AND user_id = ?;
 
 _REVOKE_MEMBERSHIP = """
 UPDATE memberships
-SET active = 0
-WHERE guild_id = ? AND user_id = ? AND is_lifetime = 0;
+SET active = 0,
+    is_lifetime = 0
+WHERE guild_id = ? AND user_id = ?;
 """
 
 _GET_EXPIRING_SOON = """
