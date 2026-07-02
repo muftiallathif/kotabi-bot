@@ -534,19 +534,39 @@ class MembershipPurchase(commands.Cog):
                         return await inter2.response.send_message("❌ Bukan order kamu.", ephemeral=True)
 
                     quantity = int(qty_select.values[0])
-                    await inter2.response.defer(ephemeral=True)
+                    try:
+                        await inter2.response.defer(ephemeral=True)
+                    except discord.NotFound:
+                        _log.warning(
+                            "Interaction kedaluwarsa saat memilih quantity (user=%d, product=%s) — dilewati.",
+                            inter2.user.id, product_id
+                        )
+                        return
                     await self.show_confirmation(inter2, product_id, quantity)
 
                 qty_select.callback = qty_callback
                 qty_view = discord.ui.View(timeout=120)
                 qty_view.add_item(qty_select)
 
-                await inter.response.edit_message(
-                    content=f"**{product.name}** — pilih jumlah bulan:",
-                    view=qty_view,
-                )
+                try:
+                    await inter.response.edit_message(
+                        content=f"**{product.name}** — pilih jumlah bulan:",
+                        view=qty_view,
+                    )
+                except discord.NotFound:
+                    _log.warning(
+                        "Interaction kedaluwarsa saat memilih produk (user=%d, product=%s) — dilewati.",
+                        inter.user.id, product_id
+                    )
             else:
-                await inter.response.defer(ephemeral=True)
+                try:
+                    await inter.response.defer(ephemeral=True)
+                except discord.NotFound:
+                    _log.warning(
+                        "Interaction kedaluwarsa saat memilih produk (user=%d, product=%s) — dilewati.",
+                        inter.user.id, product_id
+                    )
+                    return
                 await self.show_confirmation(inter, product_id, 1)
 
         product_select.callback = product_callback
