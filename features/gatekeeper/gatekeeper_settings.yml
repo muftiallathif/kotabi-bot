@@ -1,6 +1,7 @@
 rank_structure:
   1403184187669872650: # Kotabi Japanese
     - name: "【平民】Commoner"
+      open_to_drifter: true
       require_role: null
       combination_rank: false
       font: null
@@ -18,6 +19,7 @@ rank_structure:
       emoji: null
 
     - name: "【騎士】Knight"
+      open_to_drifter: true
       require_role: null
       combination_rank: false
       font: null
@@ -35,6 +37,7 @@ rank_structure:
       emoji: null
 
     - name: "【N5・従男爵】Baronet"
+      open_to_drifter: true
       require_role: null
       combination_rank: false
       font: null
@@ -52,6 +55,7 @@ rank_structure:
       emoji: null
 
     - name: "【N5・男爵】Baron"
+      open_to_drifter: true
       require_role: [1404219557333303419]
       combination_rank: false
       font: null

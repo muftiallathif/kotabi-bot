@@ -741,69 +741,52 @@ class MembershipPurchase(commands.Cog):
             ephemeral=True,
         )
 
-    async def request_proof_upload(
-        self,
-        interaction: discord.Interaction,
-        order_id: int,
-        sender_bank: str,
-    ):
-        """Minta user upload gambar bukti transfer sebagai pesan biasa, tunggu maks 5 menit."""
-        await interaction.followup.send(
-            "📎 Silakan **kirim foto/screenshot bukti transfer** sebagai pesan di sini "
-            "(bukan lewat form ini) dalam **5 menit**.",
-            ephemeral=True,
-        )
-
-        def check(m: discord.Message) -> bool:
-            return (
-                m.author.id == interaction.user.id
-                and m.channel.id == interaction.channel_id
-                and len(m.attachments) > 0
+    async def request_proof_upload(self, interaction, order_id, sender_bank):
+        try:
+            dm_channel = interaction.user.dm_channel or await interaction.user.create_dm()
+            await dm_channel.send(
+                "📎 Silakan **kirim foto/screenshot bukti transfer** sebagai pesan **di DM ini** "
+                "dalam **5 menit**.\n\n"
+                "_(Kami minta lewat DM, bukan channel publik, supaya nominal/rekening di buktimu "
+                "tidak terlihat warga lain.)_"
             )
+        except discord.Forbidden:
+            return await interaction.followup.send(
+                "❌ Bot tidak bisa DM kamu. Aktifkan \"Allow direct messages from server members\" "
+                "di pengaturan privasi Discord, lalu klik **Sudah Bayar** lagi.",
+                ephemeral=True,
+            )
+
+        await interaction.followup.send("📬 Cek DM kamu untuk lanjut upload bukti.", ephemeral=True)
+
+        def check(m):
+            return m.author.id == interaction.user.id and m.channel.id == dm_channel.id and m.attachments
 
         try:
             message = await self.bot.wait_for("message", check=check, timeout=300)
         except asyncio.TimeoutError:
-            return await interaction.followup.send(
-                "⏳ Waktu upload bukti transfer habis. Gunakan tombol **Sudah Bayar** lagi untuk mencoba ulang.",
-                ephemeral=True,
-            )
+            return await dm_channel.send("⏳ Waktu habis. Klik **Sudah Bayar** lagi di server untuk ulang.")
 
         attachment = message.attachments[0]
         if not (attachment.content_type or "").startswith("image/"):
-            return await interaction.followup.send(
-                "❌ File yang dikirim bukan gambar. Gunakan tombol **Sudah Bayar** lagi untuk mencoba ulang.",
-                ephemeral=True,
-            )
+            return await dm_channel.send("❌ Bukan gambar. Klik **Sudah Bayar** lagi untuk ulang.")
 
         phash = await _compute_phash(attachment)
         await self.repo.attach_payment_proof(order_id, attachment.url, sender_bank, phash)
-
         try:
             await message.add_reaction("✅")
         except discord.Forbidden:
             pass
 
         order = await self.repo.get_order(order_id)
-        if not order:
-            return await interaction.followup.send("❌ Order tidak ditemukan.", ephemeral=True)
-
         embed = discord.Embed(
             title="📎 Bukti Transfer Diterima",
-            description=(
-                f"Order **#{order_id} — {order.product_name}**\n"
-                f"Bank/E-wallet pengirim: **{sender_bank}**\n\n"
-                "Periksa gambar di bawah, lalu klik **Konfirmasi Order** untuk mengirim ke staf."
-            ),
+            description=f"Order **#{order_id} — {order.product_name}**\nBank pengirim: **{sender_bank}**\n\n"
+                        "Periksa gambar, lalu klik **Konfirmasi Order**.",
             color=discord.Color.blurple(),
         )
         embed.set_image(url=attachment.url)
-
-        await interaction.followup.send(
-            embed=embed,
-            view=ConfirmOrderView(self, order_id, interaction.user.id),
-            ephemeral=True,
-        )
+        await dm_channel.send(embed=embed, view=ConfirmOrderView(self, order_id, interaction.user.id))
 
     async def finalize_order(self, interaction: discord.Interaction, order_id: int):
         """draft/needs_resubmit -> pending, cek fraud, kirim embed review ke channel staff."""

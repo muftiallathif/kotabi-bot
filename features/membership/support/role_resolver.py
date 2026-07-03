@@ -194,3 +194,16 @@ class RoleResolver:
             )
 
         return changes
+    
+    async def revoke_to_drifter(self, member: discord.Member, tier: str) -> list[discord.Role]:
+        """Cabut role tier, lalu kembalikan ke Drifter (status warga biasa)."""
+        removed = await self.remove_tier(member, tier)
+
+        drifter = self._get_role("drifter")
+        if drifter and drifter not in member.roles:
+            try:
+                await member.add_roles(drifter, reason="Membership revoked/expired — kembali ke Drifter")
+            except discord.Forbidden:
+                _log.error("Forbidden: cannot add Drifter role to %s (%d)", member.name, member.id)
+
+        return removed

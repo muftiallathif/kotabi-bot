@@ -430,6 +430,42 @@ class Membership(commands.Cog):
         summary.add_field(name="Total", value=f"{len(success_list)}/{len(ids)}", inline=True)
         await interaction.followup.send(embed=summary, ephemeral=True)
 
+        # ----------------------------------------------------------
+    # /admin reset-points
+    # ----------------------------------------------------------
+
+    @admin_group.command(name="reset-points", description="Reset poin lifetime seorang user ke 0 (admin only).")
+    @discord.app_commands.describe(user="User yang poinnya mau direset.")
+    @discord.app_commands.guild_only()
+    async def reset_points(self, interaction: discord.Interaction, user: discord.User):
+        await interaction.response.defer(ephemeral=True)
+        member = interaction.guild.get_member(interaction.user.id)
+        if not _can_manage(member):
+            return await interaction.followup.send("❌ Kamu tidak punya izin.", ephemeral=True)
+
+        row = await self.svc.get_membership(interaction.guild_id, user.id)
+        if not row:
+            return await interaction.followup.send(f"❌ {user.mention} tidak punya membership.", ephemeral=True)
+
+        if row.is_lifetime:
+            return await interaction.followup.send(
+                "❌ User ini sudah Patron (lifetime). Reset poin ga akan mencabut status Patron-nya — "
+                "pakai `/admin revoke-member` dulu kalau memang mau cabut Patron-nya juga.",
+                ephemeral=True,
+            )
+
+        from features.membership.support.models import HistoryEvent
+        await self.svc.repo.set_point_count(interaction.guild_id, user.id, 0)
+        await self.svc.repo.insert_history(HistoryEvent(
+            guild_id=interaction.guild_id, user_id=user.id, event="admin_grant",
+            tier_before=row.tier, tier_after=row.tier,
+            point_before=row.point_count, point_after=0,
+            actor=interaction.user.id, reason="Poin direset manual oleh admin",
+        ))
+        await interaction.followup.send(
+            f"✅ Poin {user.mention} direset: **{row.point_count}** → **0**.", ephemeral=True
+        )
+
     # ----------------------------------------------------------
     # /admin revoke-member
     # ----------------------------------------------------------
@@ -460,7 +496,7 @@ class Membership(commands.Cog):
         if target:
             resolver = RoleResolver(interaction.guild)
             try:
-                await resolver.remove_tier(target, revoke_result.tier)
+                await resolver.revoke_to_drifter(target, revoke_result.tier)
             except Exception as e:
                 _log.error("Gagal cabut role dari %d: %s", user.id, e)
 

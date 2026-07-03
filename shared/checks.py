@@ -65,6 +65,16 @@ def has_vip_role(member: discord.Member, guild_id: int = None) -> bool:
         return True
     return any(rid in member_role_ids for rid in get_vip_role_ids(gid).values())
 
+def has_vip_role_from_ids(guild_id: int, role_ids: set[int]) -> bool:
+    """
+    Sama seperti has_vip_role(), tapi buat tempat yang cuma punya
+    set role_ids (bukan objek discord.Member utuh) — dipakai di
+    journey_service.py yang beroperasi di atas member_role_ids saja.
+    """
+    if any(rid in role_ids for rid in get_staff_role_ids(guild_id).values()):
+        return True
+    return any(rid in role_ids for rid in get_vip_role_ids(guild_id).values())
+
 
 def has_premium_role(member: discord.Member, guild_id: int = None) -> bool:
     if member.guild_permissions.administrator:

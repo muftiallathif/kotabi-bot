@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 import discord
+from shared.checks import has_vip_role_from_ids
 
 from features.gatekeeper.support import journey_queries as q
 from features.gatekeeper.support.journey_models import (
@@ -92,6 +93,7 @@ class JourneyService:
         """Ambil snapshot lengkap kondisi journey user."""
         now            = datetime.now(timezone.utc)
         rank_structure = _get_rank_structure(self.settings, guild_id)
+        is_vip         = has_vip_role_from_ids(guild_id, member_role_ids)
 
         passed_names  = await q.get_passed_quiz_names(self.bot, guild_id, user_id)
         last_attempts = await q.get_last_attempt_per_quiz(self.bot, guild_id, user_id)
@@ -106,6 +108,7 @@ class JourneyService:
                     last_attempts=last_attempts,
                     member_role_ids=member_role_ids,
                     now=now,
+                    is_vip=is_vip,
                 )
                 quizzes.append(quiz_info)
             except Exception as e:

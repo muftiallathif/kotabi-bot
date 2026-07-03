@@ -51,6 +51,23 @@ def get_next_sunday_midnight(dt: datetime) -> datetime:
         0, 0, 0, tzinfo=timezone.utc
     )
 
+NON_VIP_COOLDOWN_DAYS = 7
+
+
+def get_cooldown_release_time(last_attempt: datetime, is_vip: bool) -> datetime:
+    """
+    Satu-satunya sumber kebenaran waktu rilis cooldown kuis kasta.
+
+    VIP: sampai Minggu tengah malam UTC berikutnya (bisa <7 hari, mengikuti
+    logika lama get_next_sunday_midnight — JANGAN ubah perilaku ini).
+    Non-VIP (Drifter): tetap 7 hari penuh dari waktu gagal, supaya lebih
+    predictable dan konsisten lebih lambat dibanding VIP.
+    """
+    if is_vip:
+        return get_next_sunday_midnight(last_attempt)
+    if last_attempt.tzinfo is None:
+        last_attempt = last_attempt.replace(tzinfo=timezone.utc)
+    return last_attempt + timedelta(days=NON_VIP_COOLDOWN_DAYS)
 
 # ============================================================
 # AVAILABILITY RULES
@@ -62,18 +79,10 @@ def calculate_quiz_availability(
     last_attempts:    dict[str, datetime],
     member_role_ids:  set[int],
     now:              datetime,
+    is_vip:           bool = True,
 ) -> QuizAvailability:
     """
     Hitung status availability satu kuis untuk satu user.
-
-    Parameter:
-        quiz_config     — satu entry dari rank_structure di gatekeeper_settings.yml
-        passed_names    — set nama kuis yang sudah lulus (dari DB)
-        last_attempts   — dict quiz_name -> datetime attempt terakhir (dari DB)
-        member_role_ids — set role ID yang dimiliki member (dari Discord)
-        now             — waktu sekarang (UTC)
-
-    Return: QuizAvailability
     """
     name = quiz_config["name"]
 
@@ -81,9 +90,14 @@ def calculate_quiz_availability(
     if name in passed_names:
         return QuizAvailability.PASSED
 
-    # Kuis tanpa timeout (no_timeout=True) — selalu available
+    # Kuis tanpa timeout (no_timeout=True) — selalu available buat siapa saja
     if quiz_config.get("no_timeout", False):
         return QuizAvailability.NO_TIMEOUT
+
+    # Gerbang VIP/Drifter — kuis yang tidak ditandai open_to_drifter
+    # hanya dianggap "tersedia" untuk VIP; Drifter melihatnya sebagai LOCKED.
+    if not is_vip and not quiz_config.get("open_to_drifter", False):
+        return QuizAvailability.LOCKED
 
     # Cek require_role
     require_role = quiz_config.get("require_role")
@@ -97,14 +111,13 @@ def calculate_quiz_availability(
     # Cek cooldown
     last_attempt = last_attempts.get(name)
     if last_attempt:
-        # Pastikan timezone-aware
         if last_attempt.tzinfo is None:
             last_attempt = last_attempt.replace(tzinfo=timezone.utc)
         if now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
 
-        next_sunday = get_next_sunday_midnight(last_attempt)
-        if now < next_sunday:
+        release_time = get_cooldown_release_time(last_attempt, is_vip)
+        if now < release_time:
             return QuizAvailability.ON_COOLDOWN
 
     return QuizAvailability.AVAILABLE
@@ -116,26 +129,25 @@ def build_quiz_info(
     last_attempts:    dict[str, datetime],
     member_role_ids:  set[int],
     now:              datetime,
+    is_vip:           bool = True,
 ) -> QuizInfo:
     """
     Bangun QuizInfo lengkap dari satu entry rank_structure.
     """
     name = quiz_config["name"]
     availability = calculate_quiz_availability(
-        quiz_config, passed_names, last_attempts, member_role_ids, now
+        quiz_config, passed_names, last_attempts, member_role_ids, now, is_vip
     )
 
-    # Hitung cooldown_until kalau sedang ON_COOLDOWN
     cooldown_until = None
     if availability == QuizAvailability.ON_COOLDOWN:
         last_attempt = last_attempts.get(name)
         if last_attempt:
             if last_attempt.tzinfo is None:
                 last_attempt = last_attempt.replace(tzinfo=timezone.utc)
-            next_sunday = get_next_sunday_midnight(last_attempt)
-            cooldown_until = int(next_sunday.timestamp())
+            release_time = get_cooldown_release_time(last_attempt, is_vip)
+            cooldown_until = int(release_time.timestamp())
 
-    # require_role
     require_role_raw = quiz_config.get("require_role") or []
     require_role_ids = (
         require_role_raw if isinstance(require_role_raw, list)

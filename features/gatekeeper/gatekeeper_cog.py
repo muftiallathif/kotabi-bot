@@ -16,8 +16,8 @@ from shared.checks import has_vip_role           # <- BARU: helper VIP check
 from shared.messages import Msg                   # <- BARU: teks terpusat
 from core.bot import KotabiBot
 from features.gatekeeper.support.journey_service import JourneyService
-from features.gatekeeper.support.journey_models import NextActionType
-from features.gatekeeper.support.journey_rules import get_next_sunday_midnight
+from features.gatekeeper.support.journey_models import NextActionType, QuizAvailability
+from features.gatekeeper.support.journey_rules import get_next_sunday_midnight, get_cooldown_release_time
 
 from collections import deque
 
@@ -312,10 +312,9 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
 
-        # Cek VIP lewat has_vip_role() dari shared/checks.py
         member = interaction.guild.get_member(interaction.user.id)
-        if not member or not has_vip_role(member, interaction.guild_id):
-            await interaction.followup.send(Msg.GATEKEEPER_VIP_ONLY, ephemeral=True)
+        if not member:
+            await interaction.followup.send(Msg.GUILD_ONLY, ephemeral=True)
             return
 
         assert interaction.data is not None and "custom_id" in interaction.data, "Interaction data tidak valid."
@@ -324,19 +323,28 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
 
         rank_structure = _get_rank_structure(guild_id)
 
-        quiz_command = None
+        quiz_data = None
         for quiz in rank_structure:
             if quiz["name"].lower() == rank.lower():
-                quiz_command = quiz.get("command")
+                quiz_data = quiz
                 break
 
-        if not quiz_command:
+        if not quiz_data or not quiz_data.get("command"):
             _log.error(f"❌ quiz_command tidak ditemukan untuk rank '{rank}' di guild {guild_id}.")
             await interaction.followup.send(
                 f"❌ Perintah kuis untuk kasta **{rank}** tidak ditemukan di konfigurasi. "
                 f"Hubungi admin server.",
                 ephemeral=True
             )
+            return
+
+        quiz_command = quiz_data["command"]
+
+        # Cek VIP lewat has_vip_role() dari shared/checks.py — tapi hanya
+        # blokir kalau kuis ini memang bukan open_to_drifter.
+        is_vip = has_vip_role(member, interaction.guild_id)
+        if not is_vip and not quiz_data.get("open_to_drifter", False):
+            await interaction.followup.send(Msg.GATEKEEPER_VIP_ONLY, ephemeral=True)
             return
 
         rank_has_cooldown = await self.levelup.rank_has_cooldown(interaction.guild.id, rank)
@@ -376,14 +384,12 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
         if quiz_thread.locked or quiz_thread.archived:
             await quiz_thread.edit(locked=False, archived=False)
 
-        # Tambahkan Kotoba ke thread
         kotoba = interaction.guild.get_member(KOTOBA_BOT_ID)
         if not kotoba:
             kotoba = await interaction.guild.fetch_member(KOTOBA_BOT_ID)
         if kotoba and kotoba not in quiz_thread.members:
             await quiz_thread.add_user(kotoba)
 
-        # Tambahkan user ke thread ujian
         if interaction.user not in quiz_thread.members:
             await quiz_thread.add_user(interaction.user)
 
@@ -550,12 +556,21 @@ class LevelUp(commands.Cog):
                 await timeout_member(message.author, 2, "Memicu ujian kuis di luar bilik pelindung.")
                 return False
 
-        if is_valid and not is_in_levelup_channel:
-            await message.channel.send(
-                f"⚠️ {message.author.mention}, dilarang menggunakan perintah kuis kasta di luar bilik ujian Anda!"
-            )
-            await timeout_member(message.author, 2, "Mencoba memicu kuis di luar saluran.")
-            return False
+        if is_valid:
+            quiz_data = next((q for q in rank_structure if q["name"] == performed_quiz_name), None)
+            is_vip = has_vip_role(message.author, guild_id)
+            if quiz_data and not is_vip and not quiz_data.get("open_to_drifter", False):
+                await message.channel.send(
+                    f"⚠️ {message.author.mention}, kuis kasta **{performed_quiz_name}** ini eksklusif untuk member VIP."
+                )
+                await timeout_member(message.author, 2, "Mencoba memicu kuis VIP-only tanpa status VIP.")
+                return False
+
+            rank_has_cooldown = await self.rank_has_cooldown(guild_id, performed_quiz_name)
+            is_on_cooldown = await self.is_on_cooldown(message, performed_quiz_name, rank_has_cooldown)
+            if is_on_cooldown:
+                await timeout_member(message.author, 2, "Melakukan spam kuis dalam masa cooldown.")
+                return False
 
         return True
 
@@ -571,9 +586,10 @@ class LevelUp(commands.Cog):
         if isinstance(last_attempt_time, str):
             last_attempt_time = datetime.fromisoformat(last_attempt_time.replace("Z", "+00:00"))
 
-        next_sunday_midnight = get_next_sunday_midnight(last_attempt_time)
-        if utcnow() < next_sunday_midnight:
-            unix_timestamp = int(next_sunday_midnight.timestamp())
+        is_vip = has_vip_role(message.author, message.guild.id)
+        release_time = get_cooldown_release_time(last_attempt_time, is_vip)
+        if utcnow() < release_time:
+            unix_timestamp = int(release_time.timestamp())
             await message.channel.send(
                 f"⏳ {message.author.mention}, Anda hanya diperbolehkan mengulang ujian kuis ini 1 kali dalam seminggu.\n"
                 f"Kesempatan Anda berikutnya akan terbuka kembali pada <t:{unix_timestamp}:F> (<t:{unix_timestamp}:R>)."
@@ -584,8 +600,9 @@ class LevelUp(commands.Cog):
     async def register_quiz_attempt(self, member: discord.Member, channel: discord.TextChannel, quiz_name: str):
         """Mendaftarkan percobaan kuis tidak sukses ke dalam basis database."""
         await self.bot.RUN(ADD_QUIZ_ATTEMPT, (member.guild.id, member.id, quiz_name, utcnow().isoformat()))
-        next_sunday_midnight = get_next_sunday_midnight(utcnow())
-        unix_timestamp = int(next_sunday_midnight.timestamp())
+        is_vip = has_vip_role(member, member.guild.id)
+        release_time = get_cooldown_release_time(utcnow(), is_vip)
+        unix_timestamp = int(release_time.timestamp())
         await channel.send(
             f"📝 Percobaan ujian {member.mention} untuk kasta **{quiz_name}** telah resmi dicatat.\n"
             f"Anda diperbolehkan mencoba kembali pada <t:{unix_timestamp}:F> (<t:{unix_timestamp}:R>)."
@@ -725,7 +742,7 @@ class LevelUp(commands.Cog):
                 return True
         return False
 
-    async def get_next_attempt_time(self, guild_id: int, user_id: int, quiz_name: str) -> Optional[int]:
+    async def get_next_attempt_time(self, guild_id: int, user_id: int, quiz_name: str, is_vip: bool = True) -> Optional[int]:
         """Mendapatkan Unix timestamp ketersediaan waktu ujian pengguna berikutnya."""
         last_attempt = await self.bot.GET_ONE(GET_LAST_QUIZ_ATTEMPT, (guild_id, user_id, quiz_name))
         if not last_attempt:
@@ -735,8 +752,8 @@ class LevelUp(commands.Cog):
         if isinstance(last_attempt_time, str):
             last_attempt_time = datetime.fromisoformat(last_attempt_time.replace("Z", "+00:00"))
 
-        next_attempt_time = last_attempt_time + timedelta(days=6)
-        return int(next_attempt_time.timestamp())
+        release_time = get_cooldown_release_time(last_attempt_time, is_vip)
+        return int(release_time.timestamp())
 
     @commands.Cog.listener(name="on_message")
     async def level_up_routine(self, message: discord.Message):
@@ -1039,9 +1056,13 @@ class LevelUp(commands.Cog):
             timestamp=utcnow()
         )
 
+        target_guild_obj = self.bot.get_guild(target_guild_id)
+        target_member = target_guild_obj.get_member(interaction.user.id) if target_guild_obj else None
+        is_vip = has_vip_role(target_member, target_guild_id) if target_member else False
+
         for rank in rank_structure:
             if rank.get("command"):
-                next_attempt_time = await self.get_next_attempt_time(target_guild_id, interaction.user.id, rank["name"])
+                next_attempt_time = await self.get_next_attempt_time(target_guild_id, interaction.user.id, rank["name"], is_vip)
                 if next_attempt_time and next_attempt_time < int(utcnow().timestamp()):
                     next_attempt_time = None
 
@@ -1085,9 +1106,10 @@ class LevelUp(commands.Cog):
         if isinstance(last_attempt_time, str):
             last_attempt_time = datetime.fromisoformat(last_attempt_time.replace("Z", "+00:00"))
 
-        next_sunday_midnight = get_next_sunday_midnight(last_attempt_time)
-        if utcnow() < next_sunday_midnight:
-            unix_timestamp = int(next_sunday_midnight.timestamp())
+        is_vip = has_vip_role(member, member.guild.id)
+        release_time = get_cooldown_release_time(last_attempt_time, is_vip)
+        if utcnow() < release_time:
+            unix_timestamp = int(release_time.timestamp())
             cooldown_message = (
                 f"❌ Ujian kuis untuk kasta **{quiz_name}** masih dalam masa cooldown.\n"
                 f"Ujian Anda berikutnya baru akan tersedia pada <t:{unix_timestamp}:F> (<t:{unix_timestamp}:R>)."
@@ -1165,7 +1187,7 @@ class LevelUp(commands.Cog):
     )
     @discord.app_commands.guild_only()
     async def my_next_action(self, interaction: discord.Interaction):
-        """Satu jawaban singkat: langkah berikutnya yang harus dilakukan."""
+        """Satu jawaban singkat: langkah berikutnya, plus status kuis yang sudah terbuka untukmu."""
         await interaction.response.defer(ephemeral=True)
 
         member = interaction.guild.get_member(interaction.user.id)
@@ -1175,6 +1197,9 @@ class LevelUp(commands.Cog):
         journey_svc = JourneyService(self.bot, gatekeeper_settings)
         member_role_ids = {role.id for role in member.roles}
 
+        status = await journey_svc.get_status(
+            interaction.guild.id, member.id, member_role_ids, interaction.guild
+        )
         action = await journey_svc.get_next_action(
             interaction.guild.id, member.id, member_role_ids, interaction.guild
         )
@@ -1189,6 +1214,29 @@ class LevelUp(commands.Cog):
             role = interaction.guild.get_role(action.reward_role_id)
             if role:
                 embed.add_field(name="Reward", value=role.mention, inline=True)
+
+        # Kuis yang sudah terbuka (bukan LOCKED, bukan PASSED, bukan combination_rank)
+        unlocked = [
+            q for q in status.quizzes
+            if q.command
+            and not q.is_combination
+            and q.availability != QuizAvailability.LOCKED
+            and q.availability != QuizAvailability.PASSED
+        ]
+
+        if unlocked:
+            lines = []
+            for quiz in unlocked:
+                short = quiz.name.split("】")[-1].strip() if "】" in quiz.name else quiz.name
+                if quiz.availability == QuizAvailability.ON_COOLDOWN and quiz.cooldown_until:
+                    lines.append(f"⏳ **{short}** — cooldown, coba lagi <t:{quiz.cooldown_until}:R>")
+                else:
+                    lines.append(f"✅ **{short}** — tersedia sekarang")
+            embed.add_field(
+                name="📋 Status Kuis Terbuka",
+                value="\n".join(lines)[:1024],
+                inline=False,
+            )
 
         embed.set_footer(text="Gunakan /journey untuk melihat seluruh perjalananmu.")
         await interaction.followup.send(embed=embed, ephemeral=True)
