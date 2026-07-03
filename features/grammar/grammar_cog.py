@@ -2,10 +2,20 @@
 features/grammar/grammar_cog.py — Kamus Grammar Jepang (/grammar)
 =====================================================================
 Membaca entri dari features/grammar/grammar_entries.csv (format 26 kolom
-sesuai "Panduan Membuat Entri Kamus Grammar Bahasa Jepang"), memuatnya ke
-tabel SQLite grammar_entries, lalu menyediakan slash command /grammar
-dengan autocomplete (cari lewat romaji, kana, atau id) yang menampilkan
-entri sebagai embed terstruktur mengikuti 11 bagian ①–⑪ dari panduan.
+sesuai "Panduan Membuat Entri Kamus Grammar Bahasa Jepang", bagian 7 —
+Opsi A), memuatnya ke tabel SQLite grammar_entries, lalu menyediakan
+slash command /grammar sesuai rencana implementasi di bagian 10 panduan:
+
+  - Tiga parameter opsional & independen: pola (autocomplete), jlpt
+    (pilihan N5-N1), awalan (romaji ATAU hiragana). Kalau `pola` diisi,
+    `jlpt` dan `awalan` diabaikan (10.2).
+  - Mode "1 entri detail" dipecah 4 halaman dengan tombol Prev/Next
+    (10.3).
+  - Semua respons ephemeral, plus pagination sebagai proteksi anti-copy
+    tambahan (10.4).
+  - Gating akses: Trial dapat, Traveler TIDAK dapat, Companion/Patron
+    dapat, staff & admin selalu dapat — beda dari has_vip_role() biasa
+    (10.5). Lihat shared/checks.py::is_grammar_dic().
 
 CSV adalah sumber kebenaran: setiap cog_load(), isi CSV di-upsert ulang ke
 database (aman dijalankan berkali-kali). Kalau mau menambah/mengubah
@@ -20,11 +30,13 @@ gatekeeper_cog.py, practice_cog.py).
 import csv
 import logging
 import os
+from typing import Optional
 
 import discord
 from discord.ext import commands
 
 from core.bot import KotabiBot
+from shared.checks import is_grammar_dic
 
 _log = logging.getLogger("bot.grammar")
 
@@ -74,6 +86,10 @@ LIMIT 25;
 
 GET_ENTRY = f"SELECT {', '.join(CSV_COLUMNS)} FROM grammar_entries WHERE id = ?;"
 
+LIST_BASE_SELECT = "SELECT id, romaji, kana, meaning_id, jlpt FROM grammar_entries"
+
+JLPT_CHOICES = ["N5", "N4", "N3", "N2", "N1"]
+
 JLPT_COLOR = {
     "N5": discord.Color.green(),
     "N4": discord.Color.blue(),
@@ -81,6 +97,11 @@ JLPT_COLOR = {
     "N2": discord.Color.orange(),
     "N1": discord.Color.red(),
 }
+
+LIST_PAGE_SIZE = 10
+# Sesuai catatan 10.3: token interaksi ephemeral kedaluwarsa ~15 menit,
+# jadi timeout view dipasang sedikit di bawah itu.
+PAGINATOR_TIMEOUT_SECONDS = 800
 
 
 async def grammar_autocomplete(interaction: discord.Interaction, current_input: str):
@@ -100,10 +121,17 @@ def _row_to_dict(row: tuple) -> dict:
     return dict(zip(CSV_COLUMNS, row))
 
 
-def build_grammar_embed(entry: dict) -> discord.Embed:
-    """Menyusun entri database menjadi embed mengikuti struktur ①–⑪ panduan."""
-    title = f"{entry['romaji']}"
-    if entry.get("kanji") and entry["kanji"] not in ("—", ""):
+def _has_content(value: Optional[str]) -> bool:
+    return bool(value) and value not in ("—", "")
+
+
+# ============================================================================
+# MODE DETAIL — 4 halaman (10.3)
+# ============================================================================
+
+def _detail_base_embed(entry: dict, page_label: str) -> discord.Embed:
+    title = entry["romaji"]
+    if _has_content(entry.get("kanji")):
         title += f"（{entry['kanji']}）"
     elif entry.get("kana"):
         title += f"（{entry['kana']}）"
@@ -111,57 +139,216 @@ def build_grammar_embed(entry: dict) -> discord.Embed:
     color = JLPT_COLOR.get(entry.get("jlpt"), discord.Color.blurple())
     embed = discord.Embed(title=f"📖 {title}", color=color)
 
+    footer_bits = [page_label]
+    if entry.get("id"):
+        footer_bits.append(f"ID: {entry['id']}")
+    embed.set_footer(text=" | ".join(footer_bits))
+    return embed
+
+
+def build_detail_pages(entry: dict) -> list[discord.Embed]:
+    """Menyusun entri database menjadi 4 embed berurutan mengikuti struktur ①–⑪ panduan."""
+    pages = []
+
+    # Halaman 1: ①②③ header + ④ Meaning/Function + ⑤ Counterpart
+    p1 = _detail_base_embed(entry, "Halaman 1/4")
     jlpt_str = entry.get("jlpt") or "—"
     restriction = entry.get("usage_restriction") or "—"
-    embed.description = f"**JLPT:** {jlpt_str}　|　**Part of Speech:** {entry['part_of_speech']}　|　**Restriction:** {restriction}"
-
-    embed.add_field(
+    p1.description = (
+        f"**JLPT:** {jlpt_str}　|　**Part of Speech:** {entry['part_of_speech']}　"
+        f"|　**Restriction:** {restriction}"
+    )
+    p1.add_field(
         name="④ Meaning / Function",
         value=f"🇬🇧 {entry['meaning_en']}\n🇮🇩 {entry['meaning_id']}",
         inline=False,
     )
-    embed.add_field(
+    p1.add_field(
         name="⑤ Counterpart(s)",
         value=f"🇬🇧 {entry['counterpart_en']}\n🇮🇩 {entry['counterpart_id']}",
         inline=False,
     )
+    pages.append(p1)
 
-    if entry.get("related_expression") and entry["related_expression"] not in ("—", ""):
-        embed.add_field(name="⑥ Related Expression(s)", value=entry["related_expression"], inline=True)
-    if entry.get("formation") and entry["formation"] not in ("—", ""):
-        embed.add_field(name="⑧ Formation", value=entry["formation"].replace(";", "\n"), inline=True)
+    # Halaman 2: ⑥ Related Expression + ⑦ Key Sentence + ⑧ Formation
+    p2 = _detail_base_embed(entry, "Halaman 2/4")
+    if _has_content(entry.get("related_expression")):
+        p2.add_field(name="⑥ Related Expression(s)", value=entry["related_expression"], inline=False)
 
     key_sentence = (
         f"**Pola:** {entry['key_sentence_pola']}\n"
         f"**Contoh:** {entry['key_sentence_contoh']}\n"
         f"**ID:** {entry['key_sentence_id']}"
     )
-    embed.add_field(name="⑦ Key Sentence", value=key_sentence[:1024], inline=False)
+    p2.add_field(name="⑦ Key Sentence", value=key_sentence[:1024], inline=False)
 
+    if _has_content(entry.get("formation")):
+        p2.add_field(name="⑧ Formation", value=entry["formation"].replace(";", "\n"), inline=False)
+    pages.append(p2)
+
+    # Halaman 3: ⑨ Examples (semua contoh kalimat)
+    p3 = _detail_base_embed(entry, "Halaman 3/4")
     jp_list = entry["examples_jp"].split(" | ")
     en_list = entry["examples_en"].split(" | ")
     id_list = entry["examples_id"].split(" | ")
-    example_lines = []
+
+    blocks = []
     for i, (jp, en, idn) in enumerate(zip(jp_list, en_list, id_list), start=1):
-        example_lines.append(f"**{i}.** {jp}\n　🇬🇧 {en}\n　🇮🇩 {idn}")
-    embed.add_field(name="⑨ Examples", value="\n\n".join(example_lines)[:1024], inline=False)
+        blocks.append(f"**{i}.** {jp}\n　🇬🇧 {en}\n　🇮🇩 {idn}")
 
-    if entry.get("notes_en") and entry["notes_en"] not in ("—", ""):
+    # Field Discord dibatasi 1024 karakter — pecah jadi beberapa field kalau perlu
+    # supaya contoh yang banyak tidak terpotong diam-diam.
+    current = ""
+    field_count = 0
+    for block in blocks:
+        candidate = f"{current}\n\n{block}" if current else block
+        if len(candidate) > 1024:
+            field_count += 1
+            name = "⑨ Examples" if field_count == 1 else "⑨ Examples (lanjutan)"
+            p3.add_field(name=name, value=current, inline=False)
+            current = block
+        else:
+            current = candidate
+    if current:
+        field_count += 1
+        name = "⑨ Examples" if field_count == 1 else "⑨ Examples (lanjutan)"
+        p3.add_field(name=name, value=current, inline=False)
+    pages.append(p3)
+
+    # Halaman 4: ⑩ Note(s) + ⑪ Related Expression Detail
+    p4 = _detail_base_embed(entry, "Halaman 4/4")
+    if _has_content(entry.get("notes_en")):
         notes = f"🇬🇧 {entry['notes_en']}\n🇮🇩 {entry['notes_id']}"
-        embed.add_field(name="⑩ Note(s)", value=notes[:1024], inline=False)
+        p4.add_field(name="⑩ Note(s)", value=notes[:1024], inline=False)
+    if _has_content(entry.get("related_expression_detail")):
+        p4.add_field(
+            name="⑪ Related Expression(s) — Detail",
+            value=entry["related_expression_detail"][:1024],
+            inline=False,
+        )
+    if _has_content(entry.get("tags")):
+        p4.add_field(name="Tags", value=entry["tags"], inline=False)
+    pages.append(p4)
 
-    if entry.get("related_expression_detail") and entry["related_expression_detail"] not in ("—", ""):
-        embed.add_field(name="⑪ Related Expression(s) — Detail", value=entry["related_expression_detail"][:1024], inline=False)
+    return pages
 
-    footer_bits = []
-    if entry.get("tags") and entry["tags"] not in ("—", ""):
-        footer_bits.append(f"Tags: {entry['tags']}")
-    if entry.get("id"):
-        footer_bits.append(f"ID: {entry['id']}")
-    if footer_bits:
-        embed.set_footer(text=" | ".join(footer_bits))
 
-    return embed
+# ============================================================================
+# MODE LIST/BROWSE — jlpt / awalan / kosong (10.2)
+# ============================================================================
+
+def _build_list_query(jlpt: Optional[str], awalan: Optional[str]) -> tuple[str, tuple]:
+    """
+    Susun query + urutan sesuai tabel kombinasi di panduan 10.2:
+      - jlpt + awalan -> level tsb, diawali huruf tsb
+      - jlpt saja     -> semua entri level tsb, urut kana (あ→ん)
+      - awalan saja   -> semua level, diawali huruf tsb, urut jlpt_order
+      - kosong        -> semua entri, urut jlpt_order (mudah -> sulit)
+    """
+    where_clauses = []
+    params: list = []
+
+    if jlpt:
+        where_clauses.append("jlpt = ?")
+        params.append(jlpt)
+    if awalan:
+        # Terima romaji ATAU hiragana — dicek ke kolom romaji dan kana sekaligus.
+        where_clauses.append("(romaji LIKE ? OR kana LIKE ?)")
+        params.append(f"{awalan}%")
+        params.append(f"{awalan}%")
+
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+    if jlpt and not awalan:
+        order_sql = "ORDER BY kana ASC"
+    else:
+        order_sql = "ORDER BY jlpt_order ASC, kana ASC"
+
+    query = f"{LIST_BASE_SELECT} {where_sql} {order_sql};"
+    return query, tuple(params)
+
+
+def _list_title(jlpt: Optional[str], awalan: Optional[str]) -> str:
+    parts = []
+    if jlpt:
+        parts.append(f"Level {jlpt}")
+    if awalan:
+        parts.append(f"Awalan '{awalan}'")
+    if not parts:
+        return "📚 Semua Entri Kamus Grammar"
+    return "📚 Kamus Grammar — " + " & ".join(parts)
+
+
+def build_list_pages(entries: list[dict], jlpt: Optional[str], awalan: Optional[str]) -> list[discord.Embed]:
+    title = _list_title(jlpt, awalan)
+    chunks = [entries[i:i + LIST_PAGE_SIZE] for i in range(0, len(entries), LIST_PAGE_SIZE)] or [[]]
+    total_pages = len(chunks)
+
+    pages = []
+    for idx, chunk in enumerate(chunks, start=1):
+        lines = []
+        for e in chunk:
+            meaning = (e["meaning_id"] or "—").strip()
+            if len(meaning) > 60:
+                meaning = meaning[:57] + "..."
+            lines.append(f"**{e['romaji']}** — {meaning} `{e['jlpt'] or '—'}`")
+
+        embed = discord.Embed(
+            title=title,
+            description="\n".join(lines) or "Tidak ada entri.",
+            color=discord.Color.blurple(),
+        )
+        embed.set_footer(text=f"Halaman {idx}/{total_pages} • Total {len(entries)} entri")
+        pages.append(embed)
+
+    return pages
+
+
+# ============================================================================
+# PAGINATION VIEW — dipakai bersama oleh mode detail & mode list (10.3, 10.4)
+# ============================================================================
+
+class GrammarPaginatorView(discord.ui.View):
+    """View Prev/Next generik. Hanya pemanggil command asli yang bisa klik."""
+
+    def __init__(self, owner_id: int, pages: list[discord.Embed]):
+        super().__init__(timeout=PAGINATOR_TIMEOUT_SECONDS)
+        self.owner_id = owner_id
+        self.pages = pages
+        self.index = 0
+        self.message: Optional[discord.InteractionMessage] = None
+        self._sync_buttons()
+
+    def _sync_buttons(self):
+        self.prev_button.disabled = self.index == 0
+        self.next_button.disabled = self.index >= len(self.pages) - 1
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("❌ Ini bukan pencarian kamu.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="⬅️ Prev", style=discord.ButtonStyle.secondary)
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.index = max(0, self.index - 1)
+        self._sync_buttons()
+        await interaction.response.edit_message(embed=self.pages[self.index], view=self)
+
+    @discord.ui.button(label="Next ➡️", style=discord.ButtonStyle.secondary)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.index = min(len(self.pages) - 1, self.index + 1)
+        self._sync_buttons()
+        await interaction.response.edit_message(embed=self.pages[self.index], view=self)
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except (discord.NotFound, discord.HTTPException):
+                pass
 
 
 class Grammar(commands.Cog):
@@ -188,22 +375,68 @@ class Grammar(commands.Cog):
             await self.bot.RUN_MANY(UPSERT_ENTRY, rows_to_upsert)
             _log.info("✅ %d entri grammar dimuat dari %s", len(rows_to_upsert), GRAMMAR_CSV_PATH)
 
-    @discord.app_commands.command(name="grammar", description="Cari pola grammar Jepang di kamus (cari lewat romaji/kana).")
-    @discord.app_commands.describe(pola="Ketik romaji, kana, atau ID pola grammar yang dicari.")
+    @discord.app_commands.command(
+        name="grammar",
+        description="Cari pola grammar Jepang di kamus, atau jelajahi berdasarkan level JLPT / awalan huruf.",
+    )
+    @discord.app_commands.describe(
+        pola="Ketik romaji, kana, atau ID pola grammar. Kalau diisi, jlpt & awalan diabaikan.",
+        jlpt="Filter berdasarkan level JLPT (opsional).",
+        awalan="Filter entri yang diawali huruf ini — romaji atau hiragana (opsional).",
+    )
+    @discord.app_commands.choices(
+        jlpt=[discord.app_commands.Choice(name=level, value=level) for level in JLPT_CHOICES]
+    )
     @discord.app_commands.autocomplete(pola=grammar_autocomplete)
-    async def grammar(self, interaction: discord.Interaction, pola: str):
-        """Slash command untuk menampilkan satu entri kamus grammar sebagai embed."""
-        row = await self.bot.GET_ONE(GET_ENTRY, (pola,))
-        if not row:
-            await interaction.response.send_message(
-                "❌ Entri grammar tidak ditemukan. Gunakan menu autocomplete saat mengetik.",
-                ephemeral=True,
+    @is_grammar_dic()
+    async def grammar(
+        self,
+        interaction: discord.Interaction,
+        pola: Optional[str] = None,
+        jlpt: Optional[str] = None,
+        awalan: Optional[str] = None,
+    ):
+        """Slash command kamus grammar — mode detail (pola) atau mode list/browse (jlpt/awalan/kosong)."""
+        await interaction.response.defer(ephemeral=True)
+
+        # Mode detail: pola diisi -> jlpt & awalan diabaikan (10.2)
+        if pola:
+            row = await self.bot.GET_ONE(GET_ENTRY, (pola,))
+            if not row:
+                await interaction.followup.send(
+                    "❌ Entri grammar tidak ditemukan. Gunakan menu autocomplete saat mengetik.",
+                    ephemeral=True,
+                )
+                return
+
+            entry = _row_to_dict(row)
+            pages = build_detail_pages(entry)
+            view = GrammarPaginatorView(interaction.user.id, pages)
+            message = await interaction.followup.send(embed=pages[0], view=view, ephemeral=True, wait=True)
+            view.message = message
+            return
+
+        # Mode list/browse: jlpt / awalan / kosong (10.2)
+        if awalan:
+            awalan = awalan.strip()
+
+        query, params = _build_list_query(jlpt, awalan)
+        rows = await self.bot.GET(query, params)
+
+        if not rows:
+            await interaction.followup.send(
+                "❌ Tidak ada entri grammar yang cocok dengan filter tersebut.", ephemeral=True
             )
             return
 
-        entry = _row_to_dict(row)
-        embed = build_grammar_embed(entry)
-        await interaction.response.send_message(embed=embed)
+        entries = [
+            {"id": r[0], "romaji": r[1], "kana": r[2], "meaning_id": r[3], "jlpt": r[4]}
+            for r in rows
+        ]
+        pages = build_list_pages(entries, jlpt, awalan)
+        view = GrammarPaginatorView(interaction.user.id, pages)
+        message = await interaction.followup.send(embed=pages[0], view=view, ephemeral=True, wait=True)
+        view.message = message
 
     @discord.app_commands.command(name="grammar_reload", description="Muat ulang kamus grammar dari CSV (Khusus Admin).")
     @discord.app_commands.default_permissions(administrator=True)
