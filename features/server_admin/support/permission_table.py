@@ -44,6 +44,11 @@ ROLE_KEYS_USED = [
 
 # Channel-channel non-VIP yang perlu dapat akses Drifter
 # (semua channel publik yang bukan VIP-only)
+#
+# PERUBAHAN:
+#   - "today-i-learned" dihapus (digabung ke jlpt-study-group)
+#   - "quiz-public-1/2/3" diganti satu "quiz-public-forum"
+#   - "Study Room 1"/"Study Room 2" diganti "➕ Join to Create"
 PUBLIC_CHANNELS_FOR_DRIFTER = [
     "welcome-and-rules",
     "announcements",
@@ -58,15 +63,11 @@ PUBLIC_CHANNELS_FOR_DRIFTER = [
     "bot-commands",
     "homework-help",
     "jlpt-study-group",
-    "today-i-learned",
     "general",
     "jp-general",
     "off-topic",
-    "quiz-public-1",
-    "quiz-public-2",
-    "quiz-public-3",
+    "quiz-public-forum",
     "notes-and-resources",
     "Lounge",
-    "Study Room 1",
-    "Study Room 2",
+    "➕ Join to Create",
 ]

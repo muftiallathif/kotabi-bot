@@ -803,7 +803,7 @@ class MembershipPurchase(commands.Cog):
                 self.repo, order.guild_id, order_id, order.payment_phash
             )
 
-        guild        = interaction.guild
+        guild        = self.bot.get_guild(order.guild_id)
         review_ch    = guild.get_channel(ORDER_REVIEW_CH) if guild else None
         user         = interaction.user
         order_embed  = _build_order_embed(order, user, status="pending", fraud_matches=fraud_matches)

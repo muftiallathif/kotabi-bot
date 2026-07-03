@@ -7,6 +7,17 @@ kebenaran, dipakai bersama oleh permissions_cog.py. Role ID TIDAK disalin
 manual; semuanya di-resolve lewat shared.config.get_role_id() dari
 shared/server_map.yml.
 
+PERUBAHAN (lihat DEVELOPMENT_GUIDE.md / catatan restrukturisasi channel):
+  - quiz-public-1/2/3 (text) digabung jadi satu Forum Channel
+    "quiz-public-forum" — otomatis dibersihkan oleh
+    features/moderation/quiz_forum_cog.py.
+  - today-i-learned dihapus dari JAPANESE AREA, digabung ke
+    jlpt-study-group.
+  - quiz-rank-up dipindah dari MEMBER AREA ke QUIZ HALL.
+  - Study Room 1 & 2 (voice statis) diganti satu voice channel trigger
+    "➕ Join to Create", dikelola oleh
+    features/social/voice_jtc_cog.py.
+
 Commands:
   /setup_structure   — Membuat/menata kategori, memindahkan channel ke
                         kategori & posisi yang benar, lalu menerapkan ulang
@@ -60,7 +71,8 @@ def _get_channel_by_name(guild: discord.Guild, channel_name: str) -> Optional[di
 
 
 def _find_text_or_voice(guild: discord.Guild, name: str, kind: str) -> Optional[discord.abc.GuildChannel]:
-    """Mencari channel case-insensitive berdasarkan nama DAN tipe (text/voice)."""
+    """Mencari channel case-insensitive berdasarkan nama DAN tipe (text/voice).
+    kind="text" juga mencakup ForumChannel (mis. quiz-public-forum)."""
     name_lower = name.lower()
     for ch in guild.channels:
         if ch.name.lower() != name_lower:
@@ -180,7 +192,7 @@ STRUCTURE_BLUEPRINT: list[tuple[str, list[str], str]] = [
     ("JAPANESE AREA", [
         "homework-help",
         "jlpt-study-group",
-        "today-i-learned",
+        # "today-i-learned" DIHAPUS — digabung ke jlpt-study-group.
     ], "text"),
 
     ("COMMUNITY", [
@@ -190,9 +202,11 @@ STRUCTURE_BLUEPRINT: list[tuple[str, list[str], str]] = [
     ], "text"),
 
     ("QUIZ HALL", [
-        "quiz-public-1",
-        "quiz-public-2",
-        "quiz-public-3",
+        # quiz-public-1/2/3 digabung jadi satu Forum Channel.
+        "quiz-public-forum",
+        # Dipindah ke sini dari MEMBER AREA — lebih pas satu kategori
+        # dengan channel kuis lainnya.
+        "quiz-rank-up",
     ], "text"),
 
     ("MEMBER LIBRARY", [
@@ -207,7 +221,7 @@ STRUCTURE_BLUEPRINT: list[tuple[str, list[str], str]] = [
         "immersion-log",
         "deck-requests",
         "immersion-race",
-        "quiz-rank-up",
+        # "quiz-rank-up" DIPINDAH ke QUIZ HALL (lihat di atas).
     ], "text"),
 
     ("RESOURCES SHARING", [
@@ -216,8 +230,10 @@ STRUCTURE_BLUEPRINT: list[tuple[str, list[str], str]] = [
 
     ("VOICE CHANNELS", [
         "Lounge",
-        "Study Room 1",
-        "Study Room 2",
+        # Study Room 1 & 2 diganti sistem Join to Create dinamis —
+        # channel yang dibuat otomatis TIDAK dimasukkan ke blueprint ini
+        # (dikelola langsung oleh voice_jtc_cog.py).
+        "➕ Join to Create",
     ], "voice"),
 
     ("STAFF", [
