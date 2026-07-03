@@ -30,3 +30,109 @@ member-reguler: |
   • Akses permanen tanpa biaya tambahan selamanya.
 
   Hubungi admin untuk informasi lebih lanjut!
+
+rank-guide: |
+  Kasta menunjukkan level kemampuan bahasa Jepangmu.
+  Naik kasta dengan lulus ujian resmi di <#1517023518984896564>.
+
+  **Urutan kasta dari terendah**
+  > 🔰 Drifter — kasta awal, diberikan otomatis saat bergabung
+
+  > ⚔️ Commoner — Hiragana + Katakana dasar
+  > 🛡️ Knight — Hiragana + Katakana, level hardcore
+
+  > 📘 Baronet — N5 kanji dan kosakata
+  > 📘 Baron — N5 grammar dan pemahaman
+  > 📗 Junior Viscount — N4 kanji dan kosakata
+  > 📗 Viscount — N4 grammar dan pemahaman
+  > 📙 Junior Count — N3 kanji dan kosakata
+  > 📙 Count — N3 grammar dan pemahaman
+  > 📕 Junior Marquess — N2 kanji dan kosakata
+  > 📕 Marquess — N2 grammar dan pemahaman
+  > 📓 Junior Duke — N1 kanji dan kosakata
+  > 📓 Duke — N1 grammar dan pemahaman
+
+  > 👑 Prince Elector — menguasai kanji dan kosakata tingkat mahir
+  > 👑 High King — melampaui standar JLPT
+  > 👑 Overlord — membaca teks asli Jepang tanpa hambatan
+  > 👑 Emperor — puncak tertinggi kerajaan Kotabi
+
+  **Cara naik kasta**
+  > 1. Pergi ke <#1517023518984896564>
+  > 2. Gunakan `/list_role_commands` untuk lihat daftar ujian
+  > 3. Pilih ujian dari menu yang muncul
+  > 4. Kerjakan kuis di bilik ujian pribadimu
+  > 5. Lulus → kasta naik otomatis
+
+  **Yang perlu diketahui**
+  - Kuis di #quiz-public **tidak** menaikkan kasta, hanya untuk latihan
+  - Jika gagal ujian, ada cooldown 1 minggu sebelum bisa coba lagi
+  - Beberapa kuis butuh kasta tertentu sebagai syarat
+
+  **Command berguna**
+  `/list_role_commands` → lihat semua ujian beserta status cooldown kamu
+  `/journey` → lihat peta lengkap perjalanan kastamu
+  `/my_next_action` → tau langkah apa yang harus dilakukan sekarang
+  `/ranktable` → statistik sebaran kasta di server
+  `/rankusers` → lihat siapa saja yang punya kasta tertentu
+
+immersion-bot-info: |
+  Immersion Log adalah fitur untuk mencatat semua aktivitas belajar bahasa Jepangmu.
+  Fitur ini khusus untuk member VIP. Gunakan command di <#1516671526345113671>.
+
+  **Jenis aktivitas yang bisa dicatat**
+  - Visual Novel → jumlah karakter yang dibaca
+  - Manga → jumlah halaman
+  - Anime → jumlah episode
+  - Book → jumlah halaman
+  - Reading Time → durasi dalam menit
+  - Listening Time → durasi dalam menit
+  - Reading → jumlah karakter
+
+  **Mencatat aktivitas**
+  `/log` → catat aktivitas belajar baru
+  Isi: jenis media, jumlah, nama judul (opsional), komentar (opsional), tanggal (opsional, maks 7 hari ke belakang)
+
+  **Melihat progres**
+  `/log_stats` → grafik bar chart dan heatmap aktivitas belajarmu
+  `/log_leaderboard` → papan peringkat poin bulan ini
+  `/log_achievements` → semua badge pencapaian yang sudah terbuka
+  `/log_undo` → batalkan log terakhir yang salah input
+
+  **Target belajar**
+  `/log_set_goal` → pasang target pribadi (contoh: 1000 halaman manga bulan ini)
+  `/log_view_goals` → lihat progres semua targetmu
+  `/log_remove_goal` → hapus satu target
+  `/log_clear_goals` → bersihkan target yang sudah kedaluwarsa
+
+  **Kompetisi dan ekspor**
+  `/log_race` → generate video animasi bar chart race kompetisi immersion
+  `/log_export` → unduh semua riwayat log format CSV
+  `/logs` → unduh semua riwayat log format TXT
+
+  **Sistem poin dan pencapaian**
+  Setiap aktivitas menghasilkan poin sesuai jenis medianya.
+  Contoh: 1 episode anime = 13 poin, 50 halaman manga = 12,5 poin.
+  Setelah mencapai total poin tertentu per kategori, badge pencapaian terbuka otomatis.
+
+self-mute-info: |
+  Fitur self-mute memungkinkan kamu membisukan dirimu sendiri agar lebih fokus belajar.
+  Saat aktif, kamu tidak bisa mengirim pesan di channel manapun.
+
+  **Cara pakai**
+  `/selfmute hours:[angka] minutes:[angka]` → bisukan dirimu selama durasi yang ditentukan
+
+  Contoh:
+  > `/selfmute hours:2` — bisukan selama 2 jam
+  > `/selfmute hours:1 minutes:30` — bisukan selama 1,5 jam
+  > `/selfmute hours:24` — bisukan selama 1 hari
+
+  Durasi maksimal 30 hari. Setelah memilih durasi, pilih jenis peran bisu dari menu yang muncul.
+
+  `/check_mute` → cek status bisumu, sekaligus memulihkan peranmu jika waktu sudah habis
+
+  **Yang perlu diketahui**
+  - Kamu tidak bisa membatalkan sendiri sebelum waktu habis
+  - Staf bisa membatalkan bisumu jika ada keperluan mendesak
+  - Semua peranmu dipulihkan otomatis setelah waktu habis
+  - Fitur ini tersedia untuk member VIP

@@ -377,6 +377,7 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
             quiz_thread = await interaction.channel.create_thread(
                 name=f"📖 Ujian {interaction.user.display_name}"[:100],
                 auto_archive_duration=60,
+                invitable=False,
                 reason="Pembuatan Ruang Ujian Kuis Kasta"
             )
             await self.levelup.bot.RUN(ADD_USER_THREAD, (interaction.user.id, quiz_thread.id))
@@ -762,6 +763,18 @@ class LevelUp(commands.Cog):
             return
         if not message.guild:
             return
+
+        # Guard: hanya proses pesan dari bilik ujian rank (user_threads) atau
+        # channel quiz_rank_up. Latihan bebas di quiz-public-forum (atau
+        # practice_threads dari practice_cog.py) TIDAK PERNAH masuk ke sini,
+        # supaya tidak kena cooldown/timeout/notice "belum berhasil".
+        quiz_rank_up_channel_id = get_channel_id(message.guild.id, "quiz_rank_up")
+        is_exam_thread = await self.bot.GET_ONE(
+            "SELECT 1 FROM user_threads WHERE thread_id = ?;", (message.channel.id,)
+        )
+        if message.channel.id != quiz_rank_up_channel_id and not is_exam_thread:
+            return
+
         if not message.author.id == KOTOBA_BOT_ID and "k!q" not in message.content.lower():
             return
 

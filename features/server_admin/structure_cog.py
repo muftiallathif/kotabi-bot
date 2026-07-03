@@ -181,9 +181,6 @@ STRUCTURE_BLUEPRINT: list[tuple[str, list[str], str]] = [
     ], "text"),
 
     ("KOTABI SYSTEM", [
-        "rank-guide",
-        "immersion-bot-info",
-        "self-mute-info",
         "membership",
         "honor-board",
         "bot-commands",

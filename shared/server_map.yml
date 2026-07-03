@@ -16,9 +16,6 @@ channels:
   role_assign: 1517328466780098580
 
   # --- KOTABI SYSTEM ---
-  rank_guide: 1516670290753749072
-  immersion_bot_info: 1517328705112899615
-  self_mute_info: 1517328998563184720
   membership: 1517329671338070076
   honor_board: 1515633144525754429
   bot_commands: 1516670400090607657
