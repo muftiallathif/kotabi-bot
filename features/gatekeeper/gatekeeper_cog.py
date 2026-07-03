@@ -904,7 +904,6 @@ class LevelUp(commands.Cog):
                         message.guild.id, member.id, member_role_ids, message.guild
                     )
 
-                    from shared.config import get_channel_id
                     quiz_channel_id = get_channel_id(message.guild.id, "quiz_rank_up")
 
                     reward_embed = journey_svc.build_reward_embed(
