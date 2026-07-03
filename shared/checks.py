@@ -164,3 +164,42 @@ def is_vip_or_dm():
         await interaction.response.send_message(MSG_VIP_ONLY, ephemeral=True)
         return False
     return app_commands.check(predicate)
+
+MSG_DIC_ONLY = (
+    "❌ Fitur kamus ini tersedia untuk member **Trial**, **Companion**, atau **Patron**.\n\n"
+    "🎒 **Traveler** belum termasuk akses fitur ini.\n"
+    "🤝 **Companion** — Rp80.000 / bulan\n"
+    "👑 **Patron** — Seumur hidup\n\n"
+    "Hubungi staf untuk upgrade! 🙇‍♂️"
+)
+
+
+def has_dic_access(member: discord.Member, guild_id: int = None) -> bool:
+    """
+    Sama seperti has_vip_role(), TAPI Traveler dikecualikan.
+    Dipakai khusus untuk /grammar, /kotoba, /kanji (kamus) sesuai
+    keputusan gating di SAVE_POINT_EKSEKUSI.md: Trial dapat, Traveler
+    TIDAK dapat, Companion/Patron dapat, staff & admin selalu dapat.
+    """
+    if member.guild_permissions.administrator:
+        return True
+    gid = guild_id or member.guild.id
+    member_role_ids = {role.id for role in member.roles}
+    if any(rid in member_role_ids for rid in get_staff_role_ids(gid).values()):
+        return True
+    vip_ids = get_vip_role_ids(gid)
+    allowed_ids = {tier: rid for tier, rid in vip_ids.items() if tier != "traveler"}
+    return any(rid in member_role_ids for rid in allowed_ids.values())
+
+
+def is_grammar_dic():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        member = interaction.user
+        if not isinstance(member, discord.Member):
+            await interaction.response.send_message(MSG_GUILD_ONLY, ephemeral=True)
+            return False
+        if has_dic_access(member, interaction.guild_id):
+            return True
+        await interaction.response.send_message(MSG_DIC_ONLY, ephemeral=True)
+        return False
+    return app_commands.check(predicate)
