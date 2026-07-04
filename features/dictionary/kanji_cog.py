@@ -388,10 +388,18 @@ class Kanji(commands.Cog):
         for kanji_char, info in data.items():
             jlpt_num = info.get("jlpt_new")
             jlpt_label = JLPT_NUM_TO_LABEL.get(jlpt_num)
-            meanings_en = " | ".join(info.get("meanings", []))
-            readings_on = ", ".join(info.get("readings_on", []))
-            readings_kun = ", ".join(info.get("readings_kun", []))
-            wk_radicals = ", ".join(info.get("wk_radicals", []))
+
+            # FIX (TypeError: can only join an iterable):
+            # `.get(key, default)` hanya memakai `default` kalau key-nya
+            # TIDAK ADA sama sekali. Kalau key ADA tapi nilainya `null` di
+            # JSON (mis. kanji tanpa kun'yomi, atau tanpa data wk_radicals
+            # dari WaniKani), `.get()` mengembalikan None — lalu
+            # `", ".join(None)` meledak dengan TypeError. Pakai
+            # `.get(key) or []` supaya None juga di-fallback ke list kosong.
+            meanings_en = " | ".join(info.get("meanings") or [])
+            readings_on = ", ".join(info.get("readings_on") or [])
+            readings_kun = ", ".join(info.get("readings_kun") or [])
+            wk_radicals = ", ".join(info.get("wk_radicals") or [])
 
             rows.append((
                 kanji_char,
