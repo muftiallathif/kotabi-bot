@@ -7,15 +7,23 @@ Opsi A), memuatnya ke tabel SQLite grammar_entries, lalu menyediakan
 slash command /grammar sesuai rencana implementasi di bagian 10 panduan:
 
   - Tiga parameter opsional & independen: pola (autocomplete), jlpt
-    (pilihan N5-N1), awalan (romaji ATAU hiragana). Kalau `pola` diisi,
-    `jlpt` dan `awalan` diabaikan (10.2).
+    (pilihan N5-N1), huruf_awal (romaji ATAU hiragana). Kalau `pola`
+    diisi, `jlpt` dan `huruf_awal` diabaikan (10.2).
   - Mode "1 entri detail" dipecah 4 halaman dengan tombol Prev/Next
     (10.3).
+  - Mode "list/browse" (jlpt / huruf_awal / kosong) menampilkan daftar
+    ringkas TERPAGINASI, dengan dropdown per halaman untuk loncat
+    langsung ke mode detail satu entri tanpa perlu mengetik ulang.
   - Semua respons ephemeral, plus pagination sebagai proteksi anti-copy
     tambahan (10.4).
+  - Setiap embed hasil pencarian menampilkan info pemohon (foto profil,
+    nama tampilan, dan username) di author/footer.
   - Gating akses: Trial dapat, Traveler TIDAK dapat, Companion/Patron
     dapat, staff & admin selalu dapat — beda dari has_vip_role() biasa
     (10.5). Lihat shared/checks.py::is_grammar_dic().
+    Trial mengikuti masa berlaku trial 5 hari yang sudah ada di sistem
+    membership — TIDAK ada limiter jumlah pencarian terpisah untuk
+    kamus ini.
 
 CSV adalah sumber kebenaran: setiap cog_load(), isi CSV di-upsert ulang ke
 database (aman dijalankan berkali-kali). Kalau mau menambah/mengubah
@@ -36,7 +44,7 @@ import discord
 from discord.ext import commands
 
 from core.bot import KotabiBot
-from shared.checks import is_grammar_dic
+from shared.checks import is_dic_access
 
 _log = logging.getLogger("bot.grammar")
 
@@ -75,11 +83,24 @@ VALUES ({', '.join(['?'] * len(CSV_COLUMNS))})
 ON CONFLICT(id) DO UPDATE SET {', '.join(f"{c}=excluded.{c}" for c in CSV_COLUMNS if c != 'id')};
 """
 
+# Pencarian umum (tanpa filter jlpt) — dipakai autocomplete saat parameter
+# jlpt belum/tidak diisi.
 SEARCH_QUERY = """
 SELECT id, romaji, kana, meaning_id, jlpt FROM grammar_entries
 WHERE romaji LIKE '%' || ? || '%'
    OR kana LIKE '%' || ? || '%'
    OR id LIKE '%' || ? || '%'
+ORDER BY jlpt_order ASC, romaji ASC
+LIMIT 25;
+"""
+
+# Pencarian yang sudah difilter jlpt — dipakai autocomplete saat parameter
+# jlpt SUDAH diisi duluan oleh user, supaya daftar saran tidak menampilkan
+# level lain yang tidak relevan.
+SEARCH_QUERY_JLPT = """
+SELECT id, romaji, kana, meaning_id, jlpt FROM grammar_entries
+WHERE jlpt = ?
+AND (romaji LIKE '%' || ? || '%' OR kana LIKE '%' || ? || '%' OR id LIKE '%' || ? || '%')
 ORDER BY jlpt_order ASC, romaji ASC
 LIMIT 25;
 """
@@ -105,13 +126,23 @@ PAGINATOR_TIMEOUT_SECONDS = 800
 
 
 async def grammar_autocomplete(interaction: discord.Interaction, current_input: str):
-    """Menyediakan daftar pola grammar secara otomatis berdasarkan romaji/kana/id."""
+    """
+    Menyediakan daftar pola grammar secara otomatis berdasarkan romaji/kana/id.
+    Kalau user sudah memilih parameter `jlpt` duluan, daftar saran ikut
+    difilter ke level tersebut saja — supaya tidak menampilkan level lain
+    yang tidak relevan dengan pilihan user.
+    """
     bot: KotabiBot = interaction.client
     current_input = current_input.strip()
-    rows = await bot.GET(SEARCH_QUERY, (current_input, current_input, current_input))
+    jlpt = getattr(interaction.namespace, "jlpt", None)
+
+    if jlpt:
+        rows = await bot.GET(SEARCH_QUERY_JLPT, (jlpt, current_input, current_input, current_input))
+    else:
+        rows = await bot.GET(SEARCH_QUERY, (current_input, current_input, current_input))
 
     choices = []
-    for entry_id, romaji, kana, meaning_id, jlpt in rows:
+    for entry_id, romaji, kana, meaning_id, _jlpt in rows:
         label = f"{romaji} ({kana}) — {meaning_id}"[:100]
         choices.append(discord.app_commands.Choice(name=label, value=entry_id))
     return choices[:25]
@@ -123,6 +154,13 @@ def _row_to_dict(row: tuple) -> dict:
 
 def _has_content(value: Optional[str]) -> bool:
     return bool(value) and value not in ("—", "")
+
+
+def _add_requester_info(embed: discord.Embed, user: discord.User) -> discord.Embed:
+    """Menambahkan foto profil, nama tampilan, dan username pemohon ke embed."""
+    embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
+    embed.set_footer(text=f"Diminta oleh @{user.name}")
+    return embed
 
 
 # ============================================================================
@@ -234,16 +272,16 @@ def build_detail_pages(entry: dict) -> list[discord.Embed]:
 
 
 # ============================================================================
-# MODE LIST/BROWSE — jlpt / awalan / kosong (10.2)
+# MODE LIST/BROWSE — jlpt / huruf_awal / kosong (10.2)
 # ============================================================================
 
-def _build_list_query(jlpt: Optional[str], awalan: Optional[str]) -> tuple[str, tuple]:
+def _build_list_query(jlpt: Optional[str], huruf_awal: Optional[str]) -> tuple[str, tuple]:
     """
     Susun query + urutan sesuai tabel kombinasi di panduan 10.2:
-      - jlpt + awalan -> level tsb, diawali huruf tsb
-      - jlpt saja     -> semua entri level tsb, urut kana (あ→ん)
-      - awalan saja   -> semua level, diawali huruf tsb, urut jlpt_order
-      - kosong        -> semua entri, urut jlpt_order (mudah -> sulit)
+      - jlpt + huruf_awal -> level tsb, diawali huruf tsb
+      - jlpt saja         -> semua entri level tsb, urut kana (あ→ん)
+      - huruf_awal saja   -> semua level, diawali huruf tsb, urut jlpt_order
+      - kosong            -> semua entri, urut jlpt_order (mudah -> sulit)
     """
     where_clauses = []
     params: list = []
@@ -251,15 +289,15 @@ def _build_list_query(jlpt: Optional[str], awalan: Optional[str]) -> tuple[str, 
     if jlpt:
         where_clauses.append("jlpt = ?")
         params.append(jlpt)
-    if awalan:
+    if huruf_awal:
         # Terima romaji ATAU hiragana — dicek ke kolom romaji dan kana sekaligus.
         where_clauses.append("(romaji LIKE ? OR kana LIKE ?)")
-        params.append(f"{awalan}%")
-        params.append(f"{awalan}%")
+        params.append(f"{huruf_awal}%")
+        params.append(f"{huruf_awal}%")
 
     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
-    if jlpt and not awalan:
+    if jlpt and not huruf_awal:
         order_sql = "ORDER BY kana ASC"
     else:
         order_sql = "ORDER BY jlpt_order ASC, kana ASC"
@@ -268,19 +306,28 @@ def _build_list_query(jlpt: Optional[str], awalan: Optional[str]) -> tuple[str, 
     return query, tuple(params)
 
 
-def _list_title(jlpt: Optional[str], awalan: Optional[str]) -> str:
+def _list_title(jlpt: Optional[str], huruf_awal: Optional[str]) -> str:
     parts = []
     if jlpt:
         parts.append(f"Level {jlpt}")
-    if awalan:
-        parts.append(f"Awalan '{awalan}'")
+    if huruf_awal:
+        parts.append(f"Huruf Awal '{huruf_awal}'")
     if not parts:
         return "📚 Semua Entri Kamus Grammar"
     return "📚 Kamus Grammar — " + " & ".join(parts)
 
 
-def build_list_pages(entries: list[dict], jlpt: Optional[str], awalan: Optional[str]) -> list[discord.Embed]:
-    title = _list_title(jlpt, awalan)
+def build_list_pages(
+    entries: list[dict], jlpt: Optional[str], huruf_awal: Optional[str]
+) -> tuple[list[discord.Embed], list[list[dict]]]:
+    """
+    Return (pages, page_entries):
+      - pages        -> list embed siap kirim, satu per halaman
+      - page_entries -> list of list dict entri per halaman, dipakai untuk
+                        mengisi opsi dropdown "loncat ke detail" di setiap
+                        halaman (lihat GrammarListView).
+    """
+    title = _list_title(jlpt, huruf_awal)
     chunks = [entries[i:i + LIST_PAGE_SIZE] for i in range(0, len(entries), LIST_PAGE_SIZE)] or [[]]
     total_pages = len(chunks)
 
@@ -295,21 +342,23 @@ def build_list_pages(entries: list[dict], jlpt: Optional[str], awalan: Optional[
 
         embed = discord.Embed(
             title=title,
-            description="\n".join(lines) or "Tidak ada entri.",
+            # Baris kosong di antara entri supaya list tidak dempet dan lebih
+            # enak dibaca (dibanding "\n".join sebelumnya).
+            description="\n\n".join(lines) or "Tidak ada entri.",
             color=discord.Color.blurple(),
         )
         embed.set_footer(text=f"Halaman {idx}/{total_pages} • Total {len(entries)} entri")
         pages.append(embed)
 
-    return pages
+    return pages, chunks
 
 
 # ============================================================================
-# PAGINATION VIEW — dipakai bersama oleh mode detail & mode list (10.3, 10.4)
+# PAGINATION VIEW — mode detail (10.3, 10.4)
 # ============================================================================
 
 class GrammarPaginatorView(discord.ui.View):
-    """View Prev/Next generik. Hanya pemanggil command asli yang bisa klik."""
+    """View Prev/Next generik untuk mode detail. Hanya pemanggil command asli yang bisa klik."""
 
     def __init__(self, owner_id: int, pages: list[discord.Embed]):
         super().__init__(timeout=PAGINATOR_TIMEOUT_SECONDS)
@@ -351,6 +400,105 @@ class GrammarPaginatorView(discord.ui.View):
                 pass
 
 
+# ============================================================================
+# PAGINATION VIEW — mode list/browse, dengan dropdown loncat ke detail
+# ============================================================================
+
+class GrammarListView(discord.ui.View):
+    """
+    Paginator Prev/Next untuk mode list/browse, DITAMBAH dropdown per halaman
+    supaya user bisa langsung loncat ke mode detail satu entri tanpa perlu
+    mengetik ulang lewat parameter `pola`.
+    """
+
+    def __init__(self, owner_id: int, pages: list[discord.Embed], page_entries: list[list[dict]]):
+        super().__init__(timeout=PAGINATOR_TIMEOUT_SECONDS)
+        self.owner_id = owner_id
+        self.pages = pages
+        self.page_entries = page_entries
+        self.index = 0
+        self.message: Optional[discord.InteractionMessage] = None
+        self._sync_buttons()
+        self._rebuild_select()
+
+    def _sync_buttons(self):
+        self.prev_button.disabled = self.index == 0
+        self.next_button.disabled = self.index >= len(self.pages) - 1
+
+    def _rebuild_select(self):
+        """Buang dropdown lama (kalau ada) lalu pasang ulang sesuai isi halaman aktif."""
+        for item in list(self.children):
+            if isinstance(item, discord.ui.Select):
+                self.remove_item(item)
+
+        entries = self.page_entries[self.index]
+        if not entries:
+            return
+
+        options = [
+            discord.SelectOption(
+                label=e["romaji"][:100],
+                description=(e["meaning_id"] or "—")[:100],
+                value=e["id"],
+            )
+            for e in entries
+        ]
+        select = discord.ui.Select(
+            placeholder="Pilih entri untuk lihat detail lengkap...",
+            options=options,
+            row=0,
+        )
+        select.callback = self._on_select
+        self.add_item(select)
+
+    async def _on_select(self, interaction: discord.Interaction):
+        if interaction.user.id != self.owner_id:
+            return await interaction.response.send_message("❌ Ini bukan pencarian kamu.", ephemeral=True)
+
+        entry_id = interaction.data["values"][0]
+        bot: KotabiBot = interaction.client
+        row = await bot.GET_ONE(GET_ENTRY, (entry_id,))
+        if not row:
+            return await interaction.response.send_message("❌ Entri tidak ditemukan lagi.", ephemeral=True)
+
+        entry = _row_to_dict(row)
+        detail_pages = build_detail_pages(entry)
+        for p in detail_pages:
+            _add_requester_info(p, interaction.user)
+
+        detail_view = GrammarPaginatorView(interaction.user.id, detail_pages)
+        await interaction.response.send_message(embed=detail_pages[0], view=detail_view, ephemeral=True)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("❌ Ini bukan pencarian kamu.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="⬅️ Prev", style=discord.ButtonStyle.secondary, row=1)
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.index = max(0, self.index - 1)
+        self._sync_buttons()
+        self._rebuild_select()
+        await interaction.response.edit_message(embed=self.pages[self.index], view=self)
+
+    @discord.ui.button(label="Next ➡️", style=discord.ButtonStyle.secondary, row=1)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.index = min(len(self.pages) - 1, self.index + 1)
+        self._sync_buttons()
+        self._rebuild_select()
+        await interaction.response.edit_message(embed=self.pages[self.index], view=self)
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except (discord.NotFound, discord.HTTPException):
+                pass
+
+
 class Grammar(commands.Cog):
     def __init__(self, bot: KotabiBot):
         self.bot = bot
@@ -377,29 +525,29 @@ class Grammar(commands.Cog):
 
     @discord.app_commands.command(
         name="grammar",
-        description="Cari pola grammar Jepang di kamus, atau jelajahi berdasarkan level JLPT / awalan huruf.",
+        description="Cari pola grammar Jepang di kamus, atau jelajahi berdasarkan level JLPT / huruf awal.",
     )
     @discord.app_commands.describe(
-        pola="Ketik romaji, kana, atau ID pola grammar. Kalau diisi, jlpt & awalan diabaikan.",
+        pola="Ketik romaji, kana, atau ID pola grammar. Kalau diisi, jlpt & huruf_awal diabaikan.",
         jlpt="Filter berdasarkan level JLPT (opsional).",
-        awalan="Filter entri yang diawali huruf ini — romaji atau hiragana (opsional).",
+        huruf_awal="Filter entri yang diawali huruf ini — romaji atau hiragana (opsional).",
     )
     @discord.app_commands.choices(
         jlpt=[discord.app_commands.Choice(name=level, value=level) for level in JLPT_CHOICES]
     )
     @discord.app_commands.autocomplete(pola=grammar_autocomplete)
-    @is_grammar_dic()
+    @is_dic_access()
     async def grammar(
         self,
         interaction: discord.Interaction,
         pola: Optional[str] = None,
         jlpt: Optional[str] = None,
-        awalan: Optional[str] = None,
+        huruf_awal: Optional[str] = None,
     ):
-        """Slash command kamus grammar — mode detail (pola) atau mode list/browse (jlpt/awalan/kosong)."""
+        """Slash command kamus grammar — mode detail (pola) atau mode list/browse (jlpt/huruf_awal/kosong)."""
         await interaction.response.defer(ephemeral=True)
 
-        # Mode detail: pola diisi -> jlpt & awalan diabaikan (10.2)
+        # Mode detail: pola diisi -> jlpt & huruf_awal diabaikan (10.2)
         if pola:
             row = await self.bot.GET_ONE(GET_ENTRY, (pola,))
             if not row:
@@ -411,16 +559,19 @@ class Grammar(commands.Cog):
 
             entry = _row_to_dict(row)
             pages = build_detail_pages(entry)
+            for p in pages:
+                _add_requester_info(p, interaction.user)
+
             view = GrammarPaginatorView(interaction.user.id, pages)
             message = await interaction.followup.send(embed=pages[0], view=view, ephemeral=True, wait=True)
             view.message = message
             return
 
-        # Mode list/browse: jlpt / awalan / kosong (10.2)
-        if awalan:
-            awalan = awalan.strip()
+        # Mode list/browse: jlpt / huruf_awal / kosong (10.2)
+        if huruf_awal:
+            huruf_awal = huruf_awal.strip()
 
-        query, params = _build_list_query(jlpt, awalan)
+        query, params = _build_list_query(jlpt, huruf_awal)
         rows = await self.bot.GET(query, params)
 
         if not rows:
@@ -433,8 +584,11 @@ class Grammar(commands.Cog):
             {"id": r[0], "romaji": r[1], "kana": r[2], "meaning_id": r[3], "jlpt": r[4]}
             for r in rows
         ]
-        pages = build_list_pages(entries, jlpt, awalan)
-        view = GrammarPaginatorView(interaction.user.id, pages)
+        pages, page_entries = build_list_pages(entries, jlpt, huruf_awal)
+        for p in pages:
+            _add_requester_info(p, interaction.user)
+
+        view = GrammarListView(interaction.user.id, pages, page_entries)
         message = await interaction.followup.send(embed=pages[0], view=view, ephemeral=True, wait=True)
         view.message = message
 

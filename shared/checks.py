@@ -177,9 +177,9 @@ MSG_DIC_ONLY = (
 def has_dic_access(member: discord.Member, guild_id: int = None) -> bool:
     """
     Sama seperti has_vip_role(), TAPI Traveler dikecualikan.
-    Dipakai khusus untuk /grammar, /kotoba, /kanji (kamus) sesuai
-    keputusan gating di SAVE_POINT_EKSEKUSI.md: Trial dapat, Traveler
-    TIDAK dapat, Companion/Patron dapat, staff & admin selalu dapat.
+    Dipakai untuk seluruh fitur kamus (/grammar, /kotoba, /kanji) sesuai
+    keputusan gating: Trial dapat, Traveler TIDAK dapat,
+    Companion/Patron dapat, staff & admin selalu dapat.
     """
     if member.guild_permissions.administrator:
         return True
@@ -192,7 +192,7 @@ def has_dic_access(member: discord.Member, guild_id: int = None) -> bool:
     return any(rid in member_role_ids for rid in allowed_ids.values())
 
 
-def is_grammar_dic():
+def is_dic_access():
     async def predicate(interaction: discord.Interaction) -> bool:
         member = interaction.user
         if not isinstance(member, discord.Member):
