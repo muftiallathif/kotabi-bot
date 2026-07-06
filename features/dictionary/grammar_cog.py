@@ -41,6 +41,24 @@ manual ke database.
 
 Path CSV bisa dioverride lewat env var ALT_GRAMMAR_*_CSV_PATH, mengikuti
 pola ALT_*_PATH yang sudah dipakai cog lain di project ini.
+
+--------------------------------------------------------------------
+AUTO SCHEMA MIGRATION (FIX):
+--------------------------------------------------------------------
+`CREATE TABLE IF NOT EXISTS` HANYA membuat tabel kalau belum ada sama
+sekali. Kalau tabel sudah pernah dibuat oleh versi kode LAMA (sebelum
+sebuah kolom baru ditambahkan ke skema, mis. `reading_secondary`),
+statement itu tidak berbuat apa-apa lagi — kolom baru tidak pernah
+benar-benar tercermin ke database fisik (data/db.sqlite3, yang persist
+lewat bind mount Docker). Akibatnya UPSERT saat load_csv() gagal dengan
+`OperationalError: table X has no column named Y`.
+
+Untuk mencegah ini terulang tiap kali skema CSV/kolom baru ditambahkan,
+cog_load() sekarang menjalankan _ensure_columns() untuk keempat tabel:
+mengecek kolom yang benar-benar ada di database (lewat PRAGMA
+table_info), lalu menjalankan `ALTER TABLE ... ADD COLUMN ...` untuk
+kolom yang didefinisikan di kode tapi belum ada di database. Ini aman
+dijalankan berkali-kali (idempotent) dan tidak pernah menghapus data.
 """
 
 import csv
@@ -102,6 +120,108 @@ CREATE_TABLES = [
         FOREIGN KEY(entry_id) REFERENCES grammar_entries(id)
     );""",
 ]
+
+# ----------------------------------------------------------------------------
+# AUTO SCHEMA MIGRATION — daftar kolom + tipe SQL untuk tiap tabel.
+# Dipakai oleh _ensure_columns() untuk ALTER TABLE ADD COLUMN kalau ada
+# kolom yang didefinisikan di sini tapi belum ada di database fisik.
+# Kalau menambah kolom baru ke skema di masa depan, CUKUP tambahkan di
+# sini (dan di *_COLUMNS list + CSV terkait) — tidak perlu drop table lagi.
+# ----------------------------------------------------------------------------
+
+ENTRIES_COLUMN_TYPES = {
+    "romaji": "TEXT",
+    "kana": "TEXT",
+    "reading_secondary": "TEXT",
+    "kanji": "TEXT",
+    "jlpt": "TEXT",
+    "jlpt_order": "INTEGER",
+    "part_of_speech": "TEXT",
+    "part_of_speech_subtype": "TEXT",
+    "usage_register": "TEXT",
+    "frequency": "TEXT",
+    "meaning_en": "TEXT",
+    "meaning_id": "TEXT",
+    "formation": "TEXT",
+    "nuance": "TEXT",
+    "common_mistakes": "TEXT",
+    "related_expression": "TEXT",
+    "related_expression_detail": "TEXT",
+    "notes_en": "TEXT",
+    "notes_id": "TEXT",
+    "tags": "TEXT",
+    "rujukan_silang": "TEXT",
+    "status": "TEXT",
+}
+
+TRANSLATIONS_COLUMN_TYPES = {
+    "entry_id": "TEXT",
+    "meaning_label": "TEXT",
+    "language": "TEXT",
+    "term": "TEXT",
+    "urutan": "INTEGER",
+}
+
+KEY_SENTENCES_COLUMN_TYPES = {
+    "entry_id": "TEXT",
+    "pattern_name": "TEXT",
+    "jp": "TEXT",
+    "id_terjemahan": "TEXT",
+    "urutan": "INTEGER",
+}
+
+EXAMPLES_COLUMN_TYPES = {
+    "entry_id": "TEXT",
+    "function_label": "TEXT",
+    "jp": "TEXT",
+    "en": "TEXT",
+    "id_terjemahan": "TEXT",
+    "urutan": "INTEGER",
+}
+
+# Daftar (nama_tabel, dict_kolom_tipe) yang di-scan tiap cog_load().
+SCHEMA_MIGRATIONS = [
+    ("grammar_entries", ENTRIES_COLUMN_TYPES),
+    ("grammar_translations", TRANSLATIONS_COLUMN_TYPES),
+    ("grammar_key_sentences", KEY_SENTENCES_COLUMN_TYPES),
+    ("grammar_examples", EXAMPLES_COLUMN_TYPES),
+]
+
+
+async def _ensure_columns(bot: KotabiBot, table_name: str, expected_columns: dict[str, str]):
+    """
+    Bandingkan kolom yang seharusnya ada (expected_columns) dengan kolom
+    yang benar-benar ada di tabel `table_name` (lewat PRAGMA table_info),
+    lalu ALTER TABLE ADD COLUMN untuk kolom yang hilang.
+
+    Aman dijalankan berkali-kali — kalau semua kolom sudah lengkap, tidak
+    melakukan apa-apa. Tidak pernah menghapus atau mengubah data yang
+    sudah ada.
+    """
+    try:
+        existing_rows = await bot.GET(f"PRAGMA table_info({table_name});")
+    except Exception as e:
+        _log.error("❌ Gagal membaca skema tabel %s: %s", table_name, e)
+        return
+
+    # PRAGMA table_info mengembalikan baris: (cid, name, type, notnull, dflt_value, pk)
+    existing_columns = {row[1] for row in existing_rows}
+
+    for column_name, column_type in expected_columns.items():
+        if column_name in existing_columns:
+            continue
+        try:
+            await bot.RUN(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type};")
+            _log.info(
+                "✅ Auto-migrasi: kolom '%s' (%s) berhasil ditambahkan ke tabel '%s'.",
+                column_name, column_type, table_name,
+            )
+        except Exception as e:
+            _log.error(
+                "❌ Auto-migrasi GAGAL menambahkan kolom '%s' ke tabel '%s': %s",
+                column_name, table_name, e,
+            )
+
 
 UPSERT_ENTRY = f"""
 INSERT INTO grammar_entries ({', '.join(ENTRIES_COLUMNS)})
@@ -572,6 +692,13 @@ class Grammar(commands.Cog):
     async def cog_load(self):
         for stmt in CREATE_TABLES:
             await self.bot.RUN(stmt)
+
+        # AUTO SCHEMA MIGRATION — lihat catatan panjang di docstring modul.
+        # Menjaga supaya database lama (dibuat oleh versi kode sebelum ada
+        # kolom baru) tetap kompatibel tanpa perlu drop table manual.
+        for table_name, expected_columns in SCHEMA_MIGRATIONS:
+            await _ensure_columns(self.bot, table_name, expected_columns)
+
         await self.load_csv()
 
     async def load_csv(self):
@@ -689,6 +816,8 @@ class Grammar(commands.Cog):
     @discord.app_commands.default_permissions(administrator=True)
     async def grammar_reload(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+        for table_name, expected_columns in SCHEMA_MIGRATIONS:
+            await _ensure_columns(self.bot, table_name, expected_columns)
         await self.load_csv()
         count_row = await self.bot.GET_ONE("SELECT COUNT(*) FROM grammar_entries;")
         total = count_row[0] if count_row else 0
