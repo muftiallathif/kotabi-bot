@@ -1,0 +1,37 @@
+entry_id,meaning_label,language,term,urutan
+ue-ni-01,utama,en,on top of that,1
+ue-ni-01,utama,en,in addition to,2
+ue-ni-01,utama,en,not only ... but also,3
+ue-ni-01,utama,id,selain itu,1
+ue-ni-01,utama,id,apalagi,2
+ue-ni-01,utama,id,ditambah lagi,3
+ue-de-01,utama,en,after,1
+ue-de-01,utama,en,upon doing,2
+ue-de-01,utama,en,having done,3
+ue-de-01,utama,id,setelah,1
+ue-de-01,utama,id,sehabis,2
+ue-de-01,utama,id,sesudah melakukan,3
+ue-de-mokuteki-01,utama,en,in order to,1
+ue-de-mokuteki-01,utama,en,for the purpose of,2
+ue-de-mokuteki-01,utama,en,in doing,3
+ue-de-mokuteki-01,utama,id,dalam rangka,1
+ue-de-mokuteki-01,utama,id,demi,2
+ue-de-mokuteki-01,utama,id,untuk melakukan,3
+ue-wa-01,utama,en,now that,1
+ue-wa-01,utama,en,since things have come to this,2
+ue-wa-01,utama,en,given that,3
+ue-wa-01,utama,id,karena sudah begini,1
+ue-wa-01,utama,id,mengingat sudah sampai pada tahap ini,2
+ue-wa-01,utama,id,karena terlanjur begini,3
+uchi-ni-jikanhaba-01,utama,en,while,1
+uchi-ni-jikanhaba-01,utama,en,before one knows it,2
+uchi-ni-jikanhaba-01,utama,en,in the course of,3
+uchi-ni-jikanhaba-01,utama,id,selagi,1
+uchi-ni-jikanhaba-01,utama,id,tanpa disadari,2
+uchi-ni-jikanhaba-01,utama,id,dalam prosesnya,3
+uchi-ni-jizen-01,utama,en,while,1
+uchi-ni-jizen-01,utama,en,before it's too late,2
+uchi-ni-jizen-01,utama,en,before (something changes),3
+uchi-ni-jizen-01,utama,id,selagi,1
+uchi-ni-jizen-01,utama,id,sebelum terlambat,2
+uchi-ni-jizen-01,utama,id,sebelum (keadaan berubah),3

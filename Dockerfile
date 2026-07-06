@@ -8,7 +8,7 @@ COPY fonts/NotoEmoji-VariableFont_wght.ttf /usr/share/fonts/NotoEmoji-VariableFo
 
 COPY requirements.txt ./
 
-RUN pip install --no-cache-dir --default-timeout=120 --retries 10 -r requirements.txt
+RUN pip install --no-cache-dir --default-timeout=120 --retries 10 --root-user-action=ignore -r requirements.txt
 
 RUN mkdir -p /app/data
 
