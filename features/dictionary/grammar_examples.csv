@@ -1,12 +1,12 @@
-entry_id	function_label	jp	romaji	en	id_terjemahan	urutan																
-ga-ichiban-01	Perbandingan Objek Konkret (どれ)	このかばんの中で、どれがいちばん軽いですか。	Kono kaban no naka de, dore ga ichiban karui desu ka.	Among these bags, which one is the lightest?	Di antara tas-tas ini, mana yang paling ringan?	1																
-ga-ichiban-01	Perbandingan Orang	クラスの中で田中さんがいちばん背が高いです。	Kurasu no naka de Tanaka-san ga ichiban se ga takai desu.	Tanaka is the tallest in the class.	Tanaka yang paling tinggi di kelas.	2																
-ga-ichiban-01	Perbandingan Waktu	一年の中で夏がいちばん好きです。	Ichinen no naka de natsu ga ichiban suki desu.	Of all the seasons, I like summer the most.	Dari semua musim, saya paling suka musim panas.	3																
-ga-hoshii-01	Keinginan terhadap Barang	誕生日に新しい自転車がほしいです。	Tanjoubi ni atarashii jitensha ga hoshii desu.	I want a new bicycle for my birthday.	Saya ingin sepeda baru untuk ulang tahun.	1																
-ga-hoshii-01	Bentuk Lampau Negatif	子どものときはゲームがほしくなかったです。	Kodomo no toki wa geemu ga hoshikunakatta desu.	When I was a child, I didn't want video games.	Waktu kecil, saya tidak ingin main game.	2																
-ga-hoshii-01	Keinginan Orang Ketiga (bentuk benar, dengan と言っている)	田中さんは新しい仕事がほしいと言っています。	Tanaka-san wa atarashii shigoto ga hoshii to itte imasu.	Tanaka says he wants a new job.	Tanaka bilang dia ingin pekerjaan baru.	3																
-tai-01	Bentuk Lampau Negatif	子どものときは野菜を食べたくなかったです。	Kodomo no toki wa yasai o tabetakunakatta desu.	When I was a child, I didn't want to eat vegetables.	Waktu kecil, saya tidak mau makan sayur.	2																
-tai-01	Keinginan Orang Ketiga (bentuk benar, dengan と言っている)	兄はもっと勉強したいと言っています。	Ani wa motto benkyou shitai to itte imasu.	My older brother says he wants to study more.	Kakak saya bilang dia ingin belajar lebih banyak.	3																
-te-heiretsu-taihi-01	Paralel (Dua Tindakan Berurutan)	週末は掃除をして、洗濯をします。	Shuumatsu wa souji o shite, sentaku o shimasu.	On weekends, I clean and do laundry.	Akhir pekan saya bersih-bersih dan mencuci baju.	1																
-te-heiretsu-taihi-01	Kontras (Dua Keadaan Berbeda)	兄は背が高くて、弟は背が低いです。	Ani wa se ga takakute, otouto wa se ga hikui desu.	My older brother is tall, while my younger brother is short.	Kakak saya tinggi, sedangkan adik saya pendek.	2																
-te-heiretsu-taihi-01	Paralel (Rangkaian Aktivitas Harian)	毎朝走って、シャワーを浴びます。	Maiasa hashitte, shawaa o abimasu.	Every morning I run and then take a shower.	Setiap pagi saya lari lalu mandi shower.	3																
+entry_id	function_label	jp	romaji	en	id_terjemahan	urutan
+ga-ichiban-01	Perbandingan Objek Konkret (どれ)	このかばんの中で、どれがいちばん軽いですか。	Kono kaban no naka de, dore ga ichiban karui desu ka.	Among these bags, which one is the lightest?	Di antara tas-tas ini, mana yang paling ringan?	1
+ga-ichiban-01	Perbandingan Orang	クラスの中で田中さんがいちばん背が高いです。	Kurasu no naka de Tanaka-san ga ichiban se ga takai desu.	Tanaka is the tallest in the class.	Tanaka yang paling tinggi di kelas.	2
+ga-ichiban-01	Perbandingan Waktu	一年の中で夏がいちばん好きです。	Ichinen no naka de natsu ga ichiban suki desu.	Of all the seasons, I like summer the most.	Dari semua musim, saya paling suka musim panas.	3
+ga-hoshii-01	Keinginan terhadap Barang	誕生日に新しい自転車がほしいです。	Tanjoubi ni atarashii jitensha ga hoshii desu.	I want a new bicycle for my birthday.	Saya ingin sepeda baru untuk ulang tahun.	1
+ga-hoshii-01	Bentuk Lampau Negatif	子どものときはゲームがほしくなかったです。	Kodomo no toki wa geemu ga hoshikunakatta desu.	When I was a child, I didn't want video games.	Waktu kecil, saya tidak ingin main game.	2
+ga-hoshii-01	Keinginan Orang Ketiga (bentuk benar, dengan と言っている)	田中さんは新しい仕事がほしいと言っています。	Tanaka-san wa atarashii shigoto ga hoshii to itte imasu.	Tanaka says he wants a new job.	Tanaka bilang dia ingin pekerjaan baru.	3
+tai-01	Bentuk Lampau Negatif	子どものときは野菜を食べたくなかったです。	Kodomo no toki wa yasai o tabetakunakatta desu.	When I was a child, I didn't want to eat vegetables.	Waktu kecil, saya tidak mau makan sayur.	2
+tai-01	Keinginan Orang Ketiga (bentuk benar, dengan と言っている)	兄はもっと勉強したいと言っています。	Ani wa motto benkyou shitai to itte imasu.	My older brother says he wants to study more.	Kakak saya bilang dia ingin belajar lebih banyak.	3
+te-heiretsu-taihi-01	Paralel (Dua Tindakan Berurutan)	週末は掃除をして、洗濯をします。	Shuumatsu wa souji o shite, sentaku o shimasu.	On weekends, I clean and do laundry.	Akhir pekan saya bersih-bersih dan mencuci baju.	1
+te-heiretsu-taihi-01	Kontras (Dua Keadaan Berbeda)	兄は背が高くて、弟は背が低いです。	Ani wa se ga takakute, otouto wa se ga hikui desu.	My older brother is tall, while my younger brother is short.	Kakak saya tinggi, sedangkan adik saya pendek.	2
+te-heiretsu-taihi-01	Paralel (Rangkaian Aktivitas Harian)	毎朝走って、シャワーを浴びます。	Maiasa hashitte, shawaa o abimasu.	Every morning I run and then take a shower.	Setiap pagi saya lari lalu mandi shower.	3

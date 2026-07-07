@@ -835,7 +835,7 @@ class Grammar(commands.Cog):
                 entry_ids.append(row["id"])
 
         if entry_rows:
-            await self.bot.RUN(UPSERT_ENTRY, entry_rows)
+            await self.bot.RUN_MANY(UPSERT_ENTRY, entry_rows)
 
         for entry_id in entry_ids:
             for stmt in DELETE_CHILD_ROWS:
