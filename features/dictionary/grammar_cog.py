@@ -48,9 +48,18 @@ bagian 9.3 (Pagination) dan aturan format tampilan di bagian tersebut:
 
 CSV adalah sumber kebenaran: setiap cog_load(), isi keempat CSV
 di-upsert ulang ke 4 tabel SQLite bernama sama (aman dijalankan berkali-
-kali). Kalau mau menambah/mengubah entri, cukup edit CSV lalu
+kali). Kalau mau menambah/mengubah/MENGHAPUS entri, cukup edit CSV lalu
 restart/reload cog ini (atau /grammar_reload) — tidak perlu query
 manual ke database.
+
+PENTING (STALE ENTRY CLEANUP): CSV benar-benar diperlakukan sebagai
+sumber kebenaran PENUH — termasuk untuk penghapusan. Setiap kali
+load_csv() jalan, ID entri yang ADA di database tapi TIDAK LAGI ada di
+grammar_entries.csv akan dihapus otomatis (beserta seluruh baris anak
+terkait di grammar_translations/grammar_key_sentences/grammar_examples).
+Jadi kalau kamu hapus satu baris dari CSV lalu jalankan /grammar_reload
+(atau restart bot), entri itu akan benar-benar hilang dari database,
+bukan cuma berhenti di-upsert.
 
 Path CSV bisa dioverride lewat env var ALT_GRAMMAR_*_CSV_PATH, mengikuti
 pola ALT_*_PATH yang sudah dipakai cog lain di project ini.
@@ -67,6 +76,23 @@ KEAMANAN SQL
 - Auto schema migration (_ensure_columns) hanya menambah kolom dari
   daftar tetap di kode (ENTRIES_COLUMN_TYPES dkk), tidak pernah dari
   input dinamis, dan tidak pernah menghapus/mengubah data yang sudah ada.
+- Penghapusan entri stale (lihat di atas) HANYA menghapus baris yang
+  ID-nya diambil langsung dari hasil query SELECT id FROM grammar_entries
+  (bukan dari CSV atau input pengguna) dan dieksekusi lewat parameter
+  binding ("?"), sehingga tetap aman dari SQL injection.
+
+--------------------------------------------------------------------
+BATCH INSERT (RUN_MANY vs RUN):
+--------------------------------------------------------------------
+Semua insert/upsert yang melibatkan BANYAK baris sekaligus (list of
+tuples) WAJIB memakai bot.RUN_MANY() (executemany), bukan bot.RUN()
+(execute biasa yang cuma menerima SATU set parameter). Memakai RUN()
+dengan list of tuples akan membuat SQLite salah menghitung jumlah
+binding yang diberikan (menghasilkan error
+"Incorrect number of bindings supplied") — ini bukan soal isi CSV,
+murni salah pilih method. Kalau ke depannya menambah query
+insert/upsert baru yang beroperasi atas banyak baris, pastikan selalu
+pakai RUN_MANY().
 
 --------------------------------------------------------------------
 AUTO SCHEMA MIGRATION:
@@ -272,6 +298,9 @@ DELETE_CHILD_ROWS = [
     "DELETE FROM grammar_key_sentences WHERE entry_id = ?;",
     "DELETE FROM grammar_examples WHERE entry_id = ?;",
 ]
+
+GET_ALL_ENTRY_IDS = "SELECT id FROM grammar_entries;"
+DELETE_ENTRY_BY_ID = "DELETE FROM grammar_entries WHERE id = ?;"
 
 INSERT_TRANSLATION = f"INSERT INTO grammar_translations ({', '.join(TRANSLATIONS_COLUMNS)}) VALUES ({', '.join(['?'] * len(TRANSLATIONS_COLUMNS))});"
 INSERT_KEY_SENTENCE = f"INSERT INTO grammar_key_sentences ({', '.join(KEY_SENTENCES_COLUMNS)}) VALUES ({', '.join(['?'] * len(KEY_SENTENCES_COLUMNS))});"
@@ -817,12 +846,18 @@ class Grammar(commands.Cog):
         await self.load_csv()
 
     async def load_csv(self):
-        """CSV adalah sumber kebenaran: upsert entries, lalu ganti total
-        anak-tabel (translations/key_sentences/examples) per entri, supaya
-        baris yang dihapus dari CSV juga hilang dari database. Full replace
-        per entri ini dijalankan dalam satu proses linear (bukan multi-user
-        concurrent), dan semua nilai memakai parameter binding — aman dari
-        SQL injection walau isi CSV berubah-ubah."""
+        """CSV adalah sumber kebenaran PENUH: upsert entries yang ada di CSV,
+        ganti total anak-tabel (translations/key_sentences/examples) per
+        entri yang ada di CSV, DAN hapus entri (+anak-tabelnya) yang sudah
+        tidak ada lagi di CSV. Full replace ini dijalankan dalam satu proses
+        linear (bukan multi-user concurrent), dan semua nilai memakai
+        parameter binding — aman dari SQL injection walau isi CSV
+        berubah-ubah.
+
+        Insert/upsert yang menyentuh banyak baris sekaligus SELALU memakai
+        bot.RUN_MANY() (executemany) — bukan bot.RUN() yang hanya menerima
+        satu set parameter per panggilan.
+        """
         if not os.path.exists(ENTRIES_CSV_PATH):
             _log.warning("⚠️ File %s tidak ditemukan. Kamus grammar kosong.", ENTRIES_CSV_PATH)
             return
@@ -837,6 +872,29 @@ class Grammar(commands.Cog):
         if entry_rows:
             await self.bot.RUN_MANY(UPSERT_ENTRY, entry_rows)
 
+        # --- Hapus entri yang sudah tidak ada lagi di CSV (+ anak-tabelnya) ---
+        # Tanpa ini, entri yang dihapus dari CSV akan tetap nongkrong di
+        # database selamanya, karena UPSERT hanya menambah/memperbarui,
+        # tidak pernah menghapus baris yang tidak lagi ada di sumbernya.
+        existing_id_rows = await self.bot.GET(GET_ALL_ENTRY_IDS)
+        existing_ids = {row[0] for row in existing_id_rows}
+        ids_in_csv = set(entry_ids)
+        stale_ids = existing_ids - ids_in_csv
+
+        for stale_id in stale_ids:
+            for stmt in DELETE_CHILD_ROWS:
+                await self.bot.RUN(stmt, (stale_id,))
+            await self.bot.RUN(DELETE_ENTRY_BY_ID, (stale_id,))
+
+        if stale_ids:
+            _log.info(
+                "🧹 %d entri dihapus dari database (sudah tidak ada di %s): %s",
+                len(stale_ids), ENTRIES_CSV_PATH, sorted(stale_ids),
+            )
+        # --- akhir bagian hapus entri stale ---
+
+        # Full-replace anak-tabel untuk entri yang MASIH ada di CSV (entri
+        # stale sudah dibersihkan di atas, jadi tidak perlu diulang di sini).
         for entry_id in entry_ids:
             for stmt in DELETE_CHILD_ROWS:
                 await self.bot.RUN(stmt, (entry_id,))
