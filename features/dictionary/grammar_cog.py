@@ -830,7 +830,7 @@ class Grammar(commands.Cog):
         entry_rows = []
         entry_ids = []
         with open(ENTRIES_CSV_PATH, "r", encoding="utf-8", newline="") as f:
-            for row in csv.DictReader(f):
+            for row in csv.DictReader(f, delimiter="\t"):
                 entry_rows.append(tuple(row.get(col, "") for col in ENTRIES_COLUMNS))
                 entry_ids.append(row["id"])
 
@@ -851,7 +851,7 @@ class Grammar(commands.Cog):
                 continue
             rows = []
             with open(path, "r", encoding="utf-8", newline="") as f:
-                for row in csv.DictReader(f):
+                for row in csv.DictReader(f, delimiter="\t"):
                     rows.append(tuple(row.get(col, "") for col in columns))
             if rows:
                 await self.bot.RUN_MANY(insert_stmt, rows)

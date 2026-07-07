@@ -99,7 +99,7 @@ def load_csv(path):
     if not os.path.exists(path):
         return None, [f"File tidak ditemukan: {path}"]
     with open(path, "r", encoding="utf-8", newline="") as f:
-        rows = list(csv.DictReader(f))
+        rows = list(csv.DictReader(f, delimiter="\t"))
     return rows, []
 
 
