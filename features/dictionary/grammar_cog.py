@@ -4,34 +4,47 @@ features/dictionary/grammar_cog.py — Kamus Grammar Jepang (/grammar)
 Sumber data: 4 CSV relational (Opsi B) di features/dictionary/:
     grammar_entries.csv        (identitas + metadata + ①②③④⑤⑥⑧⑪⑫⑬⑭⑮)
     grammar_translations.csv   (⑦ Translations, per makna)
-    grammar_key_sentences.csv  (⑨ Key Sentences, per pola)
-    grammar_examples.csv       (⑩ Examples, per fungsi)
+    grammar_key_sentences.csv  (⑨ Key Sentences, per pola — JP/Romaji/EN/ID)
+    grammar_examples.csv       (⑩ Examples, per fungsi — JP/Romaji/EN/ID)
 
 Mengikuti "Panduan Membuat Entri Kamus Grammar Bahasa Jepang" (Kotabi
-Style Guide, 15 bagian ①–⑮) bagian 7 (Opsi B — relational) dan bagian 10
-(Rencana Implementasi Command Discord /grammar):
+Style Guide, 15 bagian ①–⑮), khususnya bagian 6 (Opsi B — relational),
+bagian 9.3 (Pagination) dan aturan format tampilan di bagian tersebut:
 
   - Tiga parameter opsional & independen: pola (autocomplete), jlpt
     (pilihan N5-N1), huruf_awal (romaji ATAU hiragana). Kalau `pola`
-    diisi, `jlpt` dan `huruf_awal` diabaikan (10.2).
-  - Mode "1 entri detail" dipecah 6 halaman mengikuti pengelompokan 15
-    bagian format Kotabi (10.3):
-      1. ①②③④⑤   — Grammar Entry, Reading, JLPT, Part of Speech, Register
-      2. ⑥⑦       — Meaning/Function + Translations
-      3. ⑧⑨       — Formation + Key Sentences
-      4. ⑩         — Examples
-      5. ⑪⑫       — Nuance + Common Mistakes
-      6. ⑬⑭⑮     — Related Expressions + Comparison + Notes
+    diisi, `jlpt` dan `huruf_awal` diabaikan (§9.2).
+  - Mode "1 entri detail" dipecah **3 halaman** (dipadatkan dari versi
+    4/6 halaman sebelumnya), mengikuti pengelompokan §9.3:
+      1. ①②③④⑤⑥⑦ — Grammar Entry, Reading, JLPT, Part of Speech,
+                        Usage/Register, Meaning/Function, Translations
+      2. ⑧⑨⑩       — Formation, Key Sentences, Examples
+      3. ⑪⑫⑬⑭⑮   — Nuance, Common Mistakes, Related Expressions,
+                        Comparison, Notes (+ Tags & Rujukan Silang)
   - Mode "list/browse" (jlpt / huruf_awal / kosong) TERPAGINASI, dengan
     dropdown per halaman untuk loncat langsung ke mode detail.
+  - Aturan format tampilan (§9.3):
+      * Metadata ID, Romaji (field sortir), JLPT_Order, Status TIDAK
+        ditampilkan sama sekali — murni internal untuk sortir/database.
+        Tags & Rujukan Silang TETAP ditampilkan (di halaman terakhir).
+      * Judul embed = ①+② digabung format "Nama（Bacaan）". ①② tetap
+        ditampilkan lagi sebagai section di body.
+      * Simbol lingkaran ①–⑮ TIDAK ditampilkan di body sama sekali.
+      * Label section: nama Jepang + gloss Inggris di baris tersendiri
+        (mis. "読み方 (Reading)"), tanpa romanisasi Hepburn di tengah.
+      * Bagian dwibahasa (⑥⑦⑨⑩⑮) pakai bendera 🇬🇧/🇮🇩 per baris.
+      * Romaji di ⑨/⑩ ditulis miring, satu baris di bawah kalimat JP.
+      * Item dalam satu baris (mis. daftar translations) dipisah "·".
+      * Nama pola (⑨) & label fungsi (⑩) ditulis **bold**.
+  - Entri redirect (Status: redirect) ditampilkan sebagai SATU embed
+    statis, TANPA tombol Prev/Next dan TANPA footer "Halaman X/Y" —
+    lihat build_redirect_embed().
   - Semua respons ephemeral, plus pagination sebagai proteksi anti-copy
-    tambahan (10.4).
-  - Setiap embed menampilkan info pemohon (foto profil, nama tampilan,
-    username) di author/footer.
+    tambahan (§9.4). Setiap embed menampilkan info pemohon (avatar, nama
+    tampilan, username) di author/footer.
   - Gating akses via shared/checks.py::is_dic_access() — Trial dapat,
     Traveler TIDAK dapat, Companion/Patron dapat, staff & admin selalu
-    dapat (10.5). Trial mengikuti masa berlaku trial 5 hari biasa, TIDAK
-    ada limiter jumlah pencarian terpisah.
+    dapat (§9.5).
 
 CSV adalah sumber kebenaran: setiap cog_load(), isi keempat CSV
 di-upsert ulang ke 4 tabel SQLite bernama sama (aman dijalankan berkali-
@@ -43,22 +56,36 @@ Path CSV bisa dioverride lewat env var ALT_GRAMMAR_*_CSV_PATH, mengikuti
 pola ALT_*_PATH yang sudah dipakai cog lain di project ini.
 
 --------------------------------------------------------------------
-AUTO SCHEMA MIGRATION (FIX):
+KEAMANAN SQL
+--------------------------------------------------------------------
+- Seluruh query yang menyentuh data dari luar (CSV, input pengguna)
+  memakai parameter binding ("?"), tidak pernah string-interpolation
+  langsung dari nilai data. Satu-satunya f-string dalam SQL adalah
+  untuk NAMA KOLOM/TABEL yang berasal dari konstanta tetap di kode ini
+  (ENTRIES_COLUMNS dkk, SCHEMA_MIGRATIONS) — bukan dari CSV atau input
+  pengguna — sehingga aman dari SQL injection.
+- Auto schema migration (_ensure_columns) hanya menambah kolom dari
+  daftar tetap di kode (ENTRIES_COLUMN_TYPES dkk), tidak pernah dari
+  input dinamis, dan tidak pernah menghapus/mengubah data yang sudah ada.
+
+--------------------------------------------------------------------
+AUTO SCHEMA MIGRATION:
 --------------------------------------------------------------------
 `CREATE TABLE IF NOT EXISTS` HANYA membuat tabel kalau belum ada sama
 sekali. Kalau tabel sudah pernah dibuat oleh versi kode LAMA (sebelum
-sebuah kolom baru ditambahkan ke skema, mis. `reading_secondary`),
-statement itu tidak berbuat apa-apa lagi — kolom baru tidak pernah
-benar-benar tercermin ke database fisik (data/db.sqlite3, yang persist
-lewat bind mount Docker). Akibatnya UPSERT saat load_csv() gagal dengan
+sebuah kolom baru ditambahkan ke skema, mis. `romaji`/`en` pada
+grammar_key_sentences dan grammar_examples), statement itu tidak
+berbuat apa-apa lagi — kolom baru tidak pernah benar-benar tercermin ke
+database fisik (data/db.sqlite3, yang persist lewat bind mount Docker).
+Akibatnya UPSERT/INSERT saat load_csv() bisa gagal dengan
 `OperationalError: table X has no column named Y`.
 
 Untuk mencegah ini terulang tiap kali skema CSV/kolom baru ditambahkan,
-cog_load() sekarang menjalankan _ensure_columns() untuk keempat tabel:
-mengecek kolom yang benar-benar ada di database (lewat PRAGMA
-table_info), lalu menjalankan `ALTER TABLE ... ADD COLUMN ...` untuk
-kolom yang didefinisikan di kode tapi belum ada di database. Ini aman
-dijalankan berkali-kali (idempotent) dan tidak pernah menghapus data.
+cog_load() menjalankan _ensure_columns() untuk keempat tabel: mengecek
+kolom yang benar-benar ada di database (lewat PRAGMA table_info), lalu
+menjalankan `ALTER TABLE ... ADD COLUMN ...` untuk kolom yang
+didefinisikan di kode tapi belum ada di database. Ini aman dijalankan
+berkali-kali (idempotent) dan tidak pernah menghapus data.
 """
 
 import csv
@@ -91,8 +118,12 @@ ENTRIES_COLUMNS = [
     "tags", "rujukan_silang", "status",
 ]
 TRANSLATIONS_COLUMNS = ["entry_id", "meaning_label", "language", "term", "urutan"]
-KEY_SENTENCES_COLUMNS = ["entry_id", "pattern_name", "jp", "id_terjemahan", "urutan"]
-EXAMPLES_COLUMNS = ["entry_id", "function_label", "jp", "en", "id_terjemahan", "urutan"]
+# NB: romaji & en ditambahkan supaya sesuai wajib ⑨ Key Sentences di panduan
+# (kalimat JP + baris Romaji + Terjemahan EN + Terjemahan ID).
+KEY_SENTENCES_COLUMNS = ["entry_id", "pattern_name", "jp", "romaji", "en", "id_terjemahan", "urutan"]
+# NB: romaji ditambahkan supaya sesuai wajib ⑩ Examples (empat baris:
+# JP -> Romaji -> EN -> ID).
+EXAMPLES_COLUMNS = ["entry_id", "function_label", "jp", "romaji", "en", "id_terjemahan", "urutan"]
 
 CREATE_TABLES = [
     """CREATE TABLE IF NOT EXISTS grammar_entries (
@@ -112,11 +143,13 @@ CREATE_TABLES = [
         FOREIGN KEY(entry_id) REFERENCES grammar_entries(id)
     );""",
     """CREATE TABLE IF NOT EXISTS grammar_key_sentences (
-        entry_id TEXT, pattern_name TEXT, jp TEXT, id_terjemahan TEXT, urutan INTEGER,
+        entry_id TEXT, pattern_name TEXT, jp TEXT, romaji TEXT, en TEXT,
+        id_terjemahan TEXT, urutan INTEGER,
         FOREIGN KEY(entry_id) REFERENCES grammar_entries(id)
     );""",
     """CREATE TABLE IF NOT EXISTS grammar_examples (
-        entry_id TEXT, function_label TEXT, jp TEXT, en TEXT, id_terjemahan TEXT, urutan INTEGER,
+        entry_id TEXT, function_label TEXT, jp TEXT, romaji TEXT, en TEXT,
+        id_terjemahan TEXT, urutan INTEGER,
         FOREIGN KEY(entry_id) REFERENCES grammar_entries(id)
     );""",
 ]
@@ -166,6 +199,8 @@ KEY_SENTENCES_COLUMN_TYPES = {
     "entry_id": "TEXT",
     "pattern_name": "TEXT",
     "jp": "TEXT",
+    "romaji": "TEXT",
+    "en": "TEXT",
     "id_terjemahan": "TEXT",
     "urutan": "INTEGER",
 }
@@ -174,6 +209,7 @@ EXAMPLES_COLUMN_TYPES = {
     "entry_id": "TEXT",
     "function_label": "TEXT",
     "jp": "TEXT",
+    "romaji": "TEXT",
     "en": "TEXT",
     "id_terjemahan": "TEXT",
     "urutan": "INTEGER",
@@ -196,7 +232,9 @@ async def _ensure_columns(bot: KotabiBot, table_name: str, expected_columns: dic
 
     Aman dijalankan berkali-kali — kalau semua kolom sudah lengkap, tidak
     melakukan apa-apa. Tidak pernah menghapus atau mengubah data yang
-    sudah ada.
+    sudah ada. table_name & expected_columns SELALU berasal dari
+    konstanta tetap di modul ini (SCHEMA_MIGRATIONS), tidak pernah dari
+    input pengguna, sehingga f-string di bawah aman dipakai.
     """
     try:
         existing_rows = await bot.GET(f"PRAGMA table_info({table_name});")
@@ -258,8 +296,8 @@ LIMIT 25;
 
 GET_ENTRY = f"SELECT {', '.join(ENTRIES_COLUMNS)} FROM grammar_entries WHERE id = ?;"
 GET_TRANSLATIONS = "SELECT meaning_label, language, term, urutan FROM grammar_translations WHERE entry_id = ? ORDER BY meaning_label, language, urutan ASC;"
-GET_KEY_SENTENCES = "SELECT pattern_name, jp, id_terjemahan, urutan FROM grammar_key_sentences WHERE entry_id = ? ORDER BY urutan ASC;"
-GET_EXAMPLES = "SELECT function_label, jp, en, id_terjemahan, urutan FROM grammar_examples WHERE entry_id = ? ORDER BY urutan ASC;"
+GET_KEY_SENTENCES = "SELECT pattern_name, jp, romaji, en, id_terjemahan, urutan FROM grammar_key_sentences WHERE entry_id = ? ORDER BY urutan ASC;"
+GET_EXAMPLES = "SELECT function_label, jp, romaji, en, id_terjemahan, urutan FROM grammar_examples WHERE entry_id = ? ORDER BY urutan ASC;"
 
 LIST_BASE_SELECT = "SELECT id, romaji, kana, meaning_id, jlpt FROM grammar_entries"
 
@@ -274,9 +312,12 @@ JLPT_COLOR = {
 }
 
 LIST_PAGE_SIZE = 10
-# Token interaksi ephemeral kedaluwarsa ~15 menit (10.3) — timeout view
+# Token interaksi ephemeral kedaluwarsa ~15 menit (§9.3) — timeout view
 # dipasang sedikit di bawah itu.
 PAGINATOR_TIMEOUT_SECONDS = 800
+
+# Field embed dibatasi 1024 karakter oleh Discord.
+MAX_FIELD_LENGTH = 1024
 
 
 # ============================================================================
@@ -320,6 +361,16 @@ def _add_requester_info(embed: discord.Embed, user: discord.User) -> discord.Emb
     return embed
 
 
+def _entry_display_name(entry: dict) -> str:
+    """Nama tampilan ① — pakai kanji kalau ada, kalau tidak pakai kana."""
+    return entry["kanji"] if _has_content(entry.get("kanji")) else entry["kana"]
+
+
+def _entry_title(entry: dict) -> str:
+    """Format judul 'Nama（Bacaan）' sesuai §9.3 — bukan romaji."""
+    return f"{_entry_display_name(entry)}（{entry['kana']}）"
+
+
 def _translations_by_meaning(rows: list[tuple]) -> dict[str, dict[str, list[str]]]:
     """rows -> {meaning_label: {"en": [...], "id": [...]}}"""
     grouped: dict[str, dict[str, list[str]]] = {}
@@ -329,24 +380,153 @@ def _translations_by_meaning(rows: list[tuple]) -> dict[str, dict[str, list[str]
     return grouped
 
 
+def _add_long_field(embed: discord.Embed, base_name: str, blocks: list[str], empty_text: Optional[str] = None):
+    """Gabungkan `blocks` (dipisah baris kosong) jadi satu/lebih field embed,
+    otomatis dipecah kalau melebihi batas 1024 karakter per field Discord."""
+    if not blocks:
+        if empty_text:
+            embed.add_field(name=base_name, value=empty_text, inline=False)
+        return
+
+    current = ""
+    first = True
+    for block in blocks:
+        candidate = f"{current}\n\n{block}" if current else block
+        if len(candidate) > MAX_FIELD_LENGTH:
+            name = base_name if first else f"{base_name} (lanjutan)"
+            embed.add_field(name=name, value=current, inline=False)
+            first = False
+            current = block
+        else:
+            current = candidate
+
+    if current:
+        name = base_name if first else f"{base_name} (lanjutan)"
+        embed.add_field(name=name, value=current, inline=False)
+
+
 # ============================================================================
-# MODE DETAIL — 6 halaman (10.3)
+# MODE DETAIL — 3 halaman (§9.3)
 # ============================================================================
 
-def _detail_base_embed(entry: dict, page_label: str) -> discord.Embed:
-    title = entry["romaji"]
-    if _has_content(entry.get("kanji")):
-        title += f"（{entry['kanji']}）"
-    elif entry.get("kana"):
-        title += f"（{entry['kana']}）"
-
+def _new_detail_embed(entry: dict) -> discord.Embed:
     color = JLPT_COLOR.get(entry.get("jlpt"), discord.Color.blurple())
-    embed = discord.Embed(title=f"📖 {title}", color=color)
+    return discord.Embed(title=f"📖 {_entry_title(entry)}", color=color)
 
-    footer_bits = [page_label]
-    if entry.get("id"):
-        footer_bits.append(f"ID: {entry['id']}")
-    embed.set_footer(text=" | ".join(footer_bits))
+
+def _build_page1(entry: dict) -> discord.Embed:
+    """①②③④⑤⑥⑦ — Grammar Entry, Reading, JLPT, Part of Speech, Register,
+    Meaning/Function, Translations."""
+    embed = _new_detail_embed(entry)
+
+    embed.add_field(name="文法項目 (Grammar Entry)", value=_entry_display_name(entry), inline=False)
+
+    reading = entry["kana"]
+    if _has_content(entry.get("reading_secondary")):
+        reading += f"\n(varian lisan: {entry['reading_secondary']})"
+    embed.add_field(name="読み方 (Reading)", value=reading, inline=False)
+
+    embed.add_field(name="JLPTレベル (JLPT Level)", value=entry.get("jlpt") or "—", inline=False)
+
+    pos = entry.get("part_of_speech") or "—"
+    if _has_content(entry.get("part_of_speech_subtype")):
+        pos += f" ({entry['part_of_speech_subtype']})"
+    embed.add_field(name="品詞 (Part of Speech)", value=pos, inline=False)
+
+    register_lines = [f"Ragam: {entry.get('usage_register') or '—'}"]
+    if _has_content(entry.get("frequency")):
+        register_lines.append(f"Frekuensi: {entry['frequency']}")
+    embed.add_field(name="使用域 (Usage / Register)", value="\n".join(register_lines), inline=False)
+
+    embed.add_field(
+        name="意味・機能 (Meaning & Function)",
+        value=f"🇬🇧 {entry['meaning_en']}\n🇮🇩 {entry['meaning_id']}",
+        inline=False,
+    )
+
+    return embed
+
+
+def _build_page1_with_translations(entry: dict, translation_rows: list[tuple]) -> discord.Embed:
+    embed = _build_page1(entry)
+
+    grouped = _translations_by_meaning(translation_rows)
+    if grouped:
+        blocks = []
+        for meaning_label, langs in grouped.items():
+            lines = []
+            if meaning_label and meaning_label not in ("utama", "—"):
+                lines.append(f"_{meaning_label}_")
+            if langs["en"]:
+                lines.append("🇬🇧 " + " · ".join(langs["en"]))
+            if langs["id"]:
+                lines.append("🇮🇩 " + " · ".join(langs["id"]))
+            blocks.append("\n".join(lines))
+        _add_long_field(embed, "多言語対訳 (Translations)", blocks)
+
+    return embed
+
+
+def _build_page2(entry: dict, key_sentence_rows: list[tuple], example_rows: list[tuple]) -> discord.Embed:
+    """⑧⑨⑩ — Formation, Key Sentences, Examples."""
+    embed = _new_detail_embed(entry)
+
+    if _has_content(entry.get("formation")):
+        embed.add_field(
+            name="接続形式 (Formation)",
+            value=entry["formation"].replace(";", "\n")[:MAX_FIELD_LENGTH],
+            inline=False,
+        )
+
+    key_sentence_blocks = []
+    for pattern_name, jp, romaji, en, id_terjemahan, _urutan in key_sentence_rows:
+        block = f"**{pattern_name}**\n{jp}\n_{romaji}_\n🇬🇧 {en}\n🇮🇩 {id_terjemahan}"
+        key_sentence_blocks.append(block)
+    _add_long_field(embed, "基本文 (Key Sentences)", key_sentence_blocks, empty_text="—")
+
+    example_blocks = []
+    for function_label, jp, romaji, en, id_terjemahan, _urutan in example_rows:
+        block = f"**{function_label}**\n{jp}\n_{romaji}_\n🇬🇧 {en}\n🇮🇩 {id_terjemahan}"
+        example_blocks.append(block)
+    _add_long_field(embed, "例文 (Examples)", example_blocks, empty_text="Tidak ada contoh tambahan untuk entri ini.")
+
+    return embed
+
+
+def _build_page3(entry: dict) -> discord.Embed:
+    """⑪⑫⑬⑭⑮ — Nuance, Common Mistakes, Related Expressions, Comparison,
+    Notes, ditambah Tags & Rujukan Silang (bukan bagian 15-poin, tapi tetap
+    berguna untuk pembaca sesuai §9.3)."""
+    embed = _new_detail_embed(entry)
+
+    embed.add_field(name="ニュアンス (Nuance)", value=entry.get("nuance") or "—", inline=False)
+
+    if _has_content(entry.get("common_mistakes")):
+        embed.add_field(
+            name="よくある間違い (Common Mistakes)",
+            value=entry["common_mistakes"][:MAX_FIELD_LENGTH],
+            inline=False,
+        )
+
+    if _has_content(entry.get("related_expression")):
+        embed.add_field(name="関連表現 (Related Expressions)", value=entry["related_expression"], inline=False)
+
+    if _has_content(entry.get("related_expression_detail")):
+        embed.add_field(
+            name="類似表現との比較 (Comparison)",
+            value=entry["related_expression_detail"][:MAX_FIELD_LENGTH],
+            inline=False,
+        )
+
+    if _has_content(entry.get("notes_en")):
+        notes = f"🇬🇧 {entry['notes_en']}\n🇮🇩 {entry['notes_id']}"
+        embed.add_field(name="備考 (Notes)", value=notes[:MAX_FIELD_LENGTH], inline=False)
+
+    if _has_content(entry.get("tags")):
+        embed.add_field(name="Tags", value=entry["tags"], inline=False)
+    if _has_content(entry.get("rujukan_silang")):
+        embed.add_field(name="Rujukan Silang", value=entry["rujukan_silang"], inline=False)
+
     return embed
 
 
@@ -356,122 +536,49 @@ def build_detail_pages(
     key_sentence_rows: list[tuple],
     example_rows: list[tuple],
 ) -> list[discord.Embed]:
-    """Menyusun data dari 4 tabel jadi 6 embed berurutan sesuai §10.3."""
-    pages = []
-
-    # Halaman 1: ①②③④⑤
-    p1 = _detail_base_embed(entry, "Halaman 1/6")
-    reading = entry["kana"]
-    if _has_content(entry.get("reading_secondary")):
-        reading += f"　(varian lisan: {entry['reading_secondary']})"
-    pos = entry["part_of_speech"]
-    if _has_content(entry.get("part_of_speech_subtype")):
-        pos += f" ({entry['part_of_speech_subtype']})"
-    register = entry.get("usage_register") or "—"
-    if _has_content(entry.get("frequency")):
-        register += f"　{entry['frequency']}"
-    p1.description = (
-        f"**② 読み方:** {reading}\n"
-        f"**③ JLPT:** {entry.get('jlpt') or '—'}\n"
-        f"**④ 品詞:** {pos}\n"
-        f"**⑤ 使用域:** {register}"
-    )
-    pages.append(p1)
-
-    # Halaman 2: ⑥⑦
-    p2 = _detail_base_embed(entry, "Halaman 2/6")
-    p2.add_field(
-        name="⑥ 意味・機能 (Meaning / Function)",
-        value=f"🇬🇧 {entry['meaning_en']}\n🇮🇩 {entry['meaning_id']}",
-        inline=False,
-    )
-    grouped = _translations_by_meaning(translation_rows)
-    if grouped:
-        blocks = []
-        for meaning_label, langs in grouped.items():
-            lines = []
-            if meaning_label and meaning_label != "utama":
-                lines.append(f"_{meaning_label}_")
-            if langs["en"]:
-                lines.append("🇬🇧 " + "; ".join(langs["en"]))
-            if langs["id"]:
-                lines.append("🇮🇩 " + "; ".join(langs["id"]))
-            blocks.append("\n".join(lines))
-        p2.add_field(name="⑦ 多言語対訳 (Translations)", value="\n\n".join(blocks)[:1024], inline=False)
-    pages.append(p2)
-
-    # Halaman 3: ⑧⑨
-    p3 = _detail_base_embed(entry, "Halaman 3/6")
-    if _has_content(entry.get("formation")):
-        p3.add_field(name="⑧ 接続形式 (Formation)", value=entry["formation"].replace(";", "\n"), inline=False)
-    for pattern_name, jp, id_terjemahan, _urutan in key_sentence_rows:
-        value = f"{jp}\nTerjemahan ID: {id_terjemahan}"
-        p3.add_field(name=f"⑨ {pattern_name}", value=value[:1024], inline=False)
-    pages.append(p3)
-
-    # Halaman 4: ⑩ Examples
-    p4 = _detail_base_embed(entry, "Halaman 4/6")
-    current = ""
-    field_count = 0
-    for function_label, jp, en, id_terjemahan, _urutan in example_rows:
-        block = f"**{function_label}**\n{jp}\n　🇬🇧 {en}\n　🇮🇩 {id_terjemahan}"
-        candidate = f"{current}\n\n{block}" if current else block
-        # Field Discord dibatasi 1024 karakter — pecah kalau perlu, supaya
-        # contoh yang banyak tidak terpotong diam-diam.
-        if len(candidate) > 1024:
-            field_count += 1
-            name = "⑩ 例文 (Examples)" if field_count == 1 else "⑩ Examples (lanjutan)"
-            p4.add_field(name=name, value=current, inline=False)
-            current = block
-        else:
-            current = candidate
-    if current:
-        field_count += 1
-        name = "⑩ 例文 (Examples)" if field_count == 1 else "⑩ Examples (lanjutan)"
-        p4.add_field(name=name, value=current, inline=False)
-    if not example_rows:
-        p4.description = "Tidak ada contoh tambahan untuk entri ini."
-    pages.append(p4)
-
-    # Halaman 5: ⑪⑫
-    p5 = _detail_base_embed(entry, "Halaman 5/6")
-    p5.add_field(name="⑪ ニュアンス (Nuance)", value=entry.get("nuance") or "—", inline=False)
-    p5.add_field(
-        name="⑫ よくある間違い (Common Mistakes)",
-        value=(entry.get("common_mistakes") or "—")[:1024],
-        inline=False,
-    )
-    pages.append(p5)
-
-    # Halaman 6: ⑬⑭⑮
-    p6 = _detail_base_embed(entry, "Halaman 6/6")
-    if _has_content(entry.get("related_expression")):
-        p6.add_field(name="⑬ 関連表現 (Related Expressions)", value=f"[REL. {entry['related_expression']}]", inline=False)
-    if _has_content(entry.get("related_expression_detail")):
-        p6.add_field(
-            name="⑭ 類似表現との比較 (Comparison)",
-            value=entry["related_expression_detail"][:1024],
-            inline=False,
-        )
-    if _has_content(entry.get("notes_en")):
-        notes = f"🇬🇧 {entry['notes_en']}\n🇮🇩 {entry['notes_id']}"
-        p6.add_field(name="⑮ 備考 (Notes)", value=notes[:1024], inline=False)
-    if _has_content(entry.get("tags")):
-        p6.add_field(name="Tags", value=entry["tags"], inline=False)
-    if _has_content(entry.get("rujukan_silang")):
-        p6.add_field(name="Rujukan Silang", value=entry["rujukan_silang"], inline=False)
-    pages.append(p6)
-
+    """Menyusun data dari 4 tabel jadi 3 embed berurutan sesuai §9.3."""
+    pages = [
+        _build_page1_with_translations(entry, translation_rows),
+        _build_page2(entry, key_sentence_rows, example_rows),
+        _build_page3(entry),
+    ]
+    total = len(pages)
+    for idx, page in enumerate(pages, start=1):
+        page.set_footer(text=f"Halaman {idx}/{total}")
     return pages
 
 
+def build_redirect_embed(entry: dict) -> discord.Embed:
+    """
+    Tampilan khusus untuk entri Status: redirect (lihat "Entri
+    Redirect/Alias" di panduan). SATU embed statis — TIDAK dipaginate,
+    TANPA tombol Prev/Next dan TANPA footer "Halaman X/Y".
+    """
+    embed = _new_detail_embed(entry)
+
+    if _has_content(entry.get("jlpt")):
+        embed.add_field(name="JLPTレベル (JLPT Level)", value=entry["jlpt"], inline=False)
+
+    if _has_content(entry.get("part_of_speech")):
+        pos = entry["part_of_speech"]
+        if _has_content(entry.get("part_of_speech_subtype")):
+            pos += f" ({entry['part_of_speech_subtype']})"
+        embed.add_field(name="品詞 (Part of Speech)", value=pos, inline=False)
+
+    target = entry.get("related_expression") or "—"
+    redirect_message = entry.get("meaning_id") or f"Lihat **{target}** untuk penjelasan lengkap."
+    embed.add_field(name="\u200b", value=f"🔀 Entri ini redirect. {redirect_message}", inline=False)
+
+    return embed
+
+
 # ============================================================================
-# MODE LIST/BROWSE — jlpt / huruf_awal / kosong (10.2)
+# MODE LIST/BROWSE — jlpt / huruf_awal / kosong (§9.2)
 # ============================================================================
 
 def _build_list_query(jlpt: Optional[str], huruf_awal: Optional[str]) -> tuple[str, tuple]:
     """
-    Sesuai tabel kombinasi §10.2:
+    Sesuai tabel kombinasi §9.2:
       - jlpt + huruf_awal -> level tsb, diawali huruf tsb
       - jlpt saja         -> semua entri level tsb, urut kana (あ→ん)
       - huruf_awal saja   -> semua level, diawali huruf tsb, urut jlpt_order
@@ -640,6 +747,13 @@ class GrammarListView(discord.ui.View):
             return await interaction.response.send_message("❌ Entri tidak ditemukan lagi.", ephemeral=True)
 
         entry = _row_to_dict(row)
+
+        # Entri redirect: 1 embed statis, tanpa pagination (lihat build_redirect_embed).
+        if entry.get("status") == "redirect":
+            embed = build_redirect_embed(entry)
+            _add_requester_info(embed, interaction.user)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+
         translation_rows = await bot.GET(GET_TRANSLATIONS, (entry_id,))
         key_sentence_rows = await bot.GET(GET_KEY_SENTENCES, (entry_id,))
         example_rows = await bot.GET(GET_EXAMPLES, (entry_id,))
@@ -695,7 +809,8 @@ class Grammar(commands.Cog):
 
         # AUTO SCHEMA MIGRATION — lihat catatan panjang di docstring modul.
         # Menjaga supaya database lama (dibuat oleh versi kode sebelum ada
-        # kolom baru) tetap kompatibel tanpa perlu drop table manual.
+        # kolom baru, mis. romaji/en di key_sentences & examples) tetap
+        # kompatibel tanpa perlu drop table manual.
         for table_name, expected_columns in SCHEMA_MIGRATIONS:
             await _ensure_columns(self.bot, table_name, expected_columns)
 
@@ -704,7 +819,10 @@ class Grammar(commands.Cog):
     async def load_csv(self):
         """CSV adalah sumber kebenaran: upsert entries, lalu ganti total
         anak-tabel (translations/key_sentences/examples) per entri, supaya
-        baris yang dihapus dari CSV juga hilang dari database."""
+        baris yang dihapus dari CSV juga hilang dari database. Full replace
+        per entri ini dijalankan dalam satu proses linear (bukan multi-user
+        concurrent), dan semua nilai memakai parameter binding — aman dari
+        SQL injection walau isi CSV berubah-ubah."""
         if not os.path.exists(ENTRIES_CSV_PATH):
             _log.warning("⚠️ File %s tidak ditemukan. Kamus grammar kosong.", ENTRIES_CSV_PATH)
             return
@@ -763,7 +881,7 @@ class Grammar(commands.Cog):
     ):
         await interaction.response.defer(ephemeral=True)
 
-        # Mode detail: pola diisi -> jlpt & huruf_awal diabaikan (10.2)
+        # Mode detail: pola diisi -> jlpt & huruf_awal diabaikan (§9.2)
         if pola:
             row = await self.bot.GET_ONE(GET_ENTRY, (pola,))
             if not row:
@@ -774,6 +892,14 @@ class Grammar(commands.Cog):
                 return
 
             entry = _row_to_dict(row)
+
+            # Entri redirect: 1 embed statis, tanpa pagination.
+            if entry.get("status") == "redirect":
+                embed = build_redirect_embed(entry)
+                _add_requester_info(embed, interaction.user)
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+
             translation_rows = await self.bot.GET(GET_TRANSLATIONS, (pola,))
             key_sentence_rows = await self.bot.GET(GET_KEY_SENTENCES, (pola,))
             example_rows = await self.bot.GET(GET_EXAMPLES, (pola,))
@@ -787,7 +913,7 @@ class Grammar(commands.Cog):
             view.message = message
             return
 
-        # Mode list/browse: jlpt / huruf_awal / kosong (10.2)
+        # Mode list/browse: jlpt / huruf_awal / kosong (§9.2)
         if huruf_awal:
             huruf_awal = huruf_awal.strip()
 
