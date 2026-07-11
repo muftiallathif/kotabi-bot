@@ -42,6 +42,25 @@ Format CSV: tab-delimited, baris pertama adalah metadata Anki
 `#separator:Tab` (bukan header asli) — dilewati. Baris kedua barulah
 header kolom asli yang harus PERSIS cocok dengan FIELD_NAMES (urutan &
 nama). Baris data pakai \r\n (hasil ekspor Anki di Windows).
+
+--------------------------------------------------------------------
+RENDERING TEKS: HTML -> MARKDOWN & NOTASI FURIGANA (§ baru)
+--------------------------------------------------------------------
+CSV sumber (ekspor Anki) memakai markup HTML (<b>, <s>, <br>) dan notasi
+furigana ala Anki 'kanji[bacaan]' yang TIDAK di-render Discord apa adanya.
+Transformasi ini SEMUA terjadi di layer render (lihat _sanitize_html() &
+_parse_furigana_sentence() di bawah) — CSV sendiri TIDAK PERNAH diubah,
+supaya tetap jadi satu-satunya sumber kebenaran yang bisa disinkronkan
+ulang dari Anki tanpa kehilangan hasil edit manual.
+
+- <b>...</b>  -> **...**  (bold pola target di kalimat contoh)
+- <s>...</s>  -> ~~...~~  (strikethrough, notasi textbook standar utk
+  menunjukkan bagian yang dibuang, mis. ~~ます~~ pada V-masu)
+- <br>        -> newline literal
+- 'kanji[bacaan]' pada SentFurigana -> bacaan disembunyikan di balik
+  spoiler Discord ||...|| sebagai "legenda" terpisah, sementara kalimat
+  utama ditampilkan bersih tanpa notasi bracket (lihat
+  _parse_furigana_sentence()).
 """
 
 import csv
@@ -178,6 +197,100 @@ def _add_requester_info(embed: discord.Embed, user: discord.User) -> discord.Emb
     return embed
 
 
+# ----------------------------------------------------------------------------
+# HTML -> Discord markdown sanitizer
+# ----------------------------------------------------------------------------
+# Diverifikasi terhadap SEMUA 632 baris / semua field teks: cuma 3 tag yang
+# pernah muncul di dataset ini — <br>, <b>, <s>. <b> membold pola target di
+# kalimat contoh; <s> notasi textbook standar (mis. ~~ます~~ untuk
+# menunjukkan "buang akhiran -masu"); <br> baris baru literal di field
+# catatan multi-baris.
+_HTML_BR_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_HTML_B_RE = re.compile(r"<b>(.*?)</b>", re.IGNORECASE | re.DOTALL)
+_HTML_S_RE = re.compile(r"<s>(.*?)</s>", re.IGNORECASE | re.DOTALL)
+
+
+def _sanitize_html(text: Optional[str]) -> str:
+    """Konversi markup HTML ala Anki di dataset ini jadi markdown Discord.
+    Aman dipanggil di field teks manapun (no-op kalau tidak ada 1 dari 3
+    tag di atas). Dipanggil di layer render saja — CSV TIDAK diubah."""
+    if not text:
+        return text or ""
+    text = _HTML_BR_RE.sub("\n", text)
+    text = _HTML_B_RE.sub(r"**\1**", text)
+    text = _HTML_S_RE.sub(r"~~\1~~", text)
+    return text
+
+
+# ----------------------------------------------------------------------------
+# Parser notasi furigana (field SentFurigana)
+# ----------------------------------------------------------------------------
+# Satu token = satu/lebih karakter kanji/angka yang langsung diikuti
+# [bacaan] — mis. "北[ほっ]", "今日[きょう]", "10[じっ]", "8日[ようか]",
+# "人々[びと]". Kelas karakter sebelum bracket SENGAJA dibatasi ke ideograf
+# CJK + tanda pengulangan kanji (々, U+3005) + digit ASCII/fullwidth —
+# diverifikasi ini SATU-SATUNYA jenis karakter yang pernah muncul tepat
+# sebelum bracket di 632 baris SentFurigana dataset ini. Membatasi kelas
+# ini (bukan "semua karakter selain bracket") mencegah regex "serakah"
+# menelan teks biasa/markdown di depannya ke dalam legenda.
+_FURIGANA_TOKEN_RE = re.compile(r"([\u3005\u4e00-\u9fff0-9\uff10-\uff19]+)\[([^\[\]]*)\]")
+
+
+def _parse_furigana_sentence(raw: Optional[str]) -> tuple[str, list[tuple[str, str]]]:
+    """Parse notasi furigana Anki jadi (teks_tampil, legenda).
+    - teks_tampil: kalimat dengan notasi bracket dibuang jadi kata polos,
+      spasi artifak dari tokenizer ikut dibuang.
+    - legenda: [(kata, bacaan), ...] berurutan sesuai kemunculan, dipakai
+      untuk legenda bacaan yang disembunyikan di balik spoiler.
+    Panggil _sanitize_html() pada `raw` DULU (supaya <b>/<s>/<br> sudah
+    dikonversi) — kedua tag itu tidak pernah bersinggungan dengan token
+    bracket di dataset ini jadi urutannya aman.
+    """
+    if not raw:
+        return raw or "", []
+
+    legend: list[tuple[str, str]] = []
+
+    def _replace(m: re.Match) -> str:
+        word, reading = m.group(1), m.group(2)
+        legend.append((word, reading))
+        return word
+
+    display = _FURIGANA_TOKEN_RE.sub(_replace, raw)
+    # Tokenizer sumber selalu menyisipkan 1 spasi literal sebelum tiap token
+    # bracket sebagai kemudahan parsing, BUKAN spasi ortografis asli bahasa
+    # Jepang (dikonfirmasi: tidak ada spasi asli lain di field SentFurigana)
+    # — aman dibuang secara global.
+    display = display.replace(" ", "")
+    return display, legend
+
+
+def _build_furigana_legend(legend: list[tuple[str, str]]) -> str:
+    if not legend:
+        return ""
+    return "・".join(f"{w}={r}" for w, r in legend)
+
+
+def _render_jp_text(raw: Optional[str]) -> str:
+    """Sanitizer + parser gabungan untuk field BAHASA JEPANG mana pun yang
+    bisa mengandung notasi furigana 'kanji[bacaan]' — bukan cuma
+    SentFurigana. Diverifikasi: notasi ini juga muncul luas di
+    GrammarNoteJP{n} (632/632 baris), GrammarMeaningJP (245/632), dan
+    GrammarFormation{n} (176/632) — jadi field manapun yang isinya bahasa
+    Jepang perlu dilewatkan lewat fungsi ini, bukan cuma _sanitize_html().
+    Field BAHASA INDONESIA (GrammarNoteID/GrammarMeaningID/SentDefID)
+    dikonfirmasi TIDAK PERNAH memuat notasi ini, jadi cukup _sanitize_html()
+    biasa untuk field-field itu."""
+    if not _has_content(raw):
+        return raw or ""
+    sanitized = _sanitize_html(raw)
+    display, legend = _parse_furigana_sentence(sanitized)
+    legend_text = _build_furigana_legend(legend)
+    if legend_text:
+        return f"{display} ||{legend_text}||"
+    return display
+
+
 # Regex generik untuk memisahkan nama field berulang jadi (base, nomor_slot).
 # Dipakai supaya rendering per-kategori tidak perlu tahu di muka field mana
 # saja yang berulang & berapa banyak slotnya — semua diturunkan dari nama
@@ -266,9 +379,9 @@ def _render_note_slot(slot_values: dict, slot_num: int) -> Optional[str]:
         return None
     lines = [f"**{slot_num}.**"]
     if _has_content(jp):
-        lines.append(f"🇯🇵 {jp}")
+        lines.append(f"🇯🇵 {_render_jp_text(jp)}")
     if _has_content(idn):
-        lines.append(f"🇮🇩 {idn}")
+        lines.append(f"🇮🇩 {_sanitize_html(idn)}")
     return "\n".join(lines)
 
 
@@ -285,29 +398,32 @@ def _render_sentence_slot(slot_values: dict, slot_num: int) -> Optional[str]:
         header += f" — {sent_type}"
     header += "**"
     lines.append(header)
+
     # Furigana sudah mengandung notasi kanji[bacaan] + <b>pola</b>, jadi
-    # dipakai sebagai baris utama; SentKanji polos hanya fallback kalau
-    # furigana kosong.
+    # dipakai sebagai baris utama (dibersihkan lewat sanitizer + parser di
+    # bawah); SentKanji polos hanya fallback kalau furigana kosong.
     if _has_content(furigana):
-        lines.append(furigana)
+        sanitized = _sanitize_html(furigana)
+        display, legend = _parse_furigana_sentence(sanitized)
+        lines.append(display)
+        legend_text = _build_furigana_legend(legend)
+        if legend_text:
+            # Bacaan disembunyikan di balik spoiler Discord (opt-in klik) —
+            # sesuai keputusan: "Pakai spoiler - bacaan ketutup, klik dulu
+            # buat buka."
+            lines.append(f"||{legend_text}||")
     elif _has_content(kanji):
-        lines.append(kanji)
+        lines.append(_sanitize_html(kanji))
+
     if _has_content(def_id):
-        lines.append(f"🇮🇩 {def_id}")
+        lines.append(f"🇮🇩 {_sanitize_html(def_id)}")
     return "\n".join(lines)
-
-
-def _render_audio_image_slot(base: str, value: str, slot_num: int) -> Optional[str]:
-    if not _has_content(value):
-        return None
-    label = "🔊 Audio" if base == "SentAudio" else "🖼️ Gambar"
-    return f"{label} {slot_num}: {value}"
 
 
 def _render_formation(values: list[str]) -> Optional[str]:
     if not values:
         return None
-    return "\n".join(f"{i}. {v}" for i, v in enumerate(values, start=1))
+    return "\n".join(f"{i}. {_render_jp_text(v)}" for i, v in enumerate(values, start=1))
 
 
 def _render_meaning(entry: dict) -> Optional[str]:
@@ -322,11 +438,11 @@ def _render_meaning(entry: dict) -> Optional[str]:
         meanings = [m.strip() for m in meaning_id.split(";") if m.strip()]
         if len(meanings) > 1:
             for i, m in enumerate(meanings, start=1):
-                lines.append(f"{i}. {m}")
+                lines.append(f"{i}. {_sanitize_html(m)}")
         else:
-            lines.append(meaning_id)
+            lines.append(_sanitize_html(meaning_id))
     if _has_content(meaning_jp):
-        lines.append(f"🇯🇵 {meaning_jp}")
+        lines.append(f"🇯🇵 {_render_jp_text(meaning_jp)}")
     return "\n".join(lines)
 
 
@@ -358,6 +474,21 @@ def _group_by_slot(fields: list[str], entry: dict) -> tuple[list[tuple[str, str]
     return singles, slotted
 
 
+# Kategori yang benar-benar ditampilkan ke user, dalam urutan tampil
+# (§8 panduan ringkas: 接続 → 意味 → 備考 → 例文). "Audio & Gambar" sengaja
+# TIDAK dimasukkan — field-nya cuma berisi nama file mentah dari Anki
+# (mis. "[sound:...]", "<img src=...>"), bukan URL yang bisa diakses/
+# diputar di Discord. Aktifkan lagi kalau nanti file-file itu sudah
+# benar-benar di-hosting di tempat yang bisa dirujuk Discord (CDN/URL
+# publik) — tinggal tambahkan "Audio & Gambar" kembali ke list ini dan
+# pasang lagi rendering slot Audio/Gambar (lihat git history cog ini).
+DISPLAYED_CATEGORIES = ["Cara Penyambungan", "Makna", "Catatan Penjelasan", "Contoh Kalimat"]
+
+# §8: "tidak perlu pagination ... kecuali kalimat contohnya banyak
+# (5-6 slot terisi)". Ambil ambang bawahnya (5) sebagai titik potong.
+MANY_SENTENCES_THRESHOLD = 5
+
+
 def render_category(entry: dict, category_name: str, fields: list[str]) -> list[tuple[str, str]]:
     """Render satu kategori (dari CATEGORY_FIELDS) jadi list (nama_field_embed,
     isi) siap ditaruh sebagai embed field. Generik terhadap jumlah slot —
@@ -376,7 +507,7 @@ def render_category(entry: dict, category_name: str, fields: list[str]) -> list[
             output.append(("接続 (Cara Penyambungan)", formation_block))
         register = entry.get("GrammarRegister")
         if _has_content(register):
-            output.append(("使用域 (Register)", register))
+            output.append(("使用域 (Register)", _sanitize_html(register)))
 
     elif category_name == "Makna":
         meaning_block = _render_meaning(entry)
@@ -401,44 +532,67 @@ def render_category(entry: dict, category_name: str, fields: list[str]) -> list[
         if blocks:
             output.append(("例文 (Contoh Kalimat)", "\n\n".join(blocks)))
 
-    elif category_name == "Audio & Gambar":
-        lines = []
-        for slot_num in sorted(slotted):
-            for base, value in slotted[slot_num].items():
-                line = _render_audio_image_slot(base, value, slot_num)
-                if line:
-                    lines.append(line)
-        if lines:
-            output.append(("音声・画像 (Audio & Gambar)", "\n".join(lines)))
-
     # "Pengelompokan/Tag" sengaja tidak dirender di sini — dipakai untuk
     # footer lewat _entry_footer(), bukan halaman/body (lihat FOOTER_CATEGORY).
 
     return output
 
 
+def _sentence_slot_count(entry: dict) -> int:
+    """Hitung berapa slot 例文 (Contoh Kalimat) yang benar-benar terisi,
+    dipakai untuk menentukan apakah perlu pagination 2 halaman (§8)."""
+    _, slotted = _group_by_slot(CATEGORY_FIELDS["Contoh Kalimat"], entry)
+    return len(slotted)
+
+
 def build_detail_pages(entry: dict) -> list[discord.Embed]:
-    """Bangun halaman detail SECARA DINAMIS dari CATEGORY_FIELDS — jumlah
-    halaman = jumlah kategori yang benar-benar punya isi setelah dikurangi
-    kategori tersembunyi (Template Toggle) dan kategori judul/footer
-    (Info Pola, Pengelompokan/Tag). Tidak ada angka halaman hardcode."""
+    """Bangun halaman detail sesuai §8 panduan ringkas: DEFAULT 1 embed
+    tunggal (接続+makna+catatan+contoh semua di satu embed, seperti contoh
+    やら di panduan) — HANYA dipecah jadi 2 halaman kalau kalimat contohnya
+    banyak (>= MANY_SENTENCES_THRESHOLD slot terisi), dan kalau dipecah,
+    halaman 1 tetap berisi 接続+意味+備考 + catatan singkat "lihat halaman
+    berikutnya", halaman 2 khusus 例文 lengkap. Tidak pernah lebih dari 2
+    halaman, dan Audio & Gambar tidak pernah dirender (lihat
+    DISPLAYED_CATEGORIES)."""
     color = LEVEL_COLOR.get(entry.get("level"), discord.Color.blurple())
     title = f"📖 {_entry_title(entry)}"
     footer_text = _entry_footer(entry)
 
+    sentence_count = _sentence_slot_count(entry)
+    split_sentences = sentence_count >= MANY_SENTENCES_THRESHOLD
+
+    main_categories = [c for c in DISPLAYED_CATEGORIES if c != "Contoh Kalimat"]
+    main_fields: list[tuple[str, str]] = []
+    for category_name in main_categories:
+        main_fields += render_category(entry, category_name, CATEGORY_FIELDS[category_name])
+
+    sentence_fields = render_category(entry, "Contoh Kalimat", CATEGORY_FIELDS["Contoh Kalimat"])
+
     pages: list[discord.Embed] = []
-    for category_name, fields in CATEGORY_FIELDS.items():
-        if category_name in HIDDEN_CATEGORIES or category_name == TITLE_CATEGORY or category_name == FOOTER_CATEGORY:
-            continue
 
-        rendered_fields = render_category(entry, category_name, fields)
-        if not rendered_fields:
-            continue
-
+    if not split_sentences:
+        # 1 embed tunggal — kasus default/mayoritas entri.
         embed = discord.Embed(title=title, color=color)
-        for name, value in rendered_fields:
+        for name, value in main_fields + sentence_fields:
             _add_long_field(embed, name, [value])
         pages.append(embed)
+    else:
+        # Halaman 1: info pola + makna + catatan, + penunjuk ke halaman 2.
+        page1 = discord.Embed(title=title, color=color)
+        for name, value in main_fields:
+            _add_long_field(page1, name, [value])
+        page1.add_field(
+            name="例文 (Contoh)",
+            value=f"{sentence_count} kalimat, lihat halaman berikutnya ➡️",
+            inline=False,
+        )
+        pages.append(page1)
+
+        # Halaman 2: 例文 lengkap.
+        page2 = discord.Embed(title=title, color=color)
+        for name, value in sentence_fields:
+            _add_long_field(page2, name, [value])
+        pages.append(page2)
 
     if not pages:
         # Fallback kalau entri kosong total selain Info Pola (seharusnya
@@ -447,8 +601,13 @@ def build_detail_pages(entry: dict) -> list[discord.Embed]:
 
     total = len(pages)
     for idx, page in enumerate(pages, start=1):
-        base_footer = f"Halaman {idx}/{total}"
-        page.set_footer(text=f"{base_footer} • {footer_text}" if footer_text else base_footer)
+        parts = []
+        if total > 1:
+            parts.append(f"Halaman {idx}/{total}")
+        if footer_text:
+            parts.append(footer_text)
+        if parts:
+            page.set_footer(text=" • ".join(parts))
 
     return pages
 
@@ -483,7 +642,17 @@ def build_list_pages(entries: list[dict], level: Optional[str]) -> tuple[list[di
             meaning = (e["GrammarMeaningID"] or "—").split(";")[0].strip()
             if len(meaning) > 60:
                 meaning = meaning[:57] + "..."
-            lines.append(f"**{e['GrammarPattern']}** （{e['GrammarFurigana']}） — {meaning} `{e['level'] or '—'}`")
+
+            pattern = e["GrammarPattern"]
+            furigana = e["GrammarFurigana"]
+            # Kalau pola sudah murni kana, furigana identik dengan pattern
+            # (§3.1) — jangan diulang tampilkannya (mis. "あいだ（あいだ）").
+            # Hanya tampilkan furigana kalau memang beda (pola pakai kanji).
+            name_part = pattern if furigana == pattern else f"{pattern}（{furigana}）"
+
+            level_tag = f"`{e['level']}`" if e["level"] else ""
+            header_line = f"**{name_part}** {level_tag}".rstrip()
+            lines.append(f"{header_line}\n{meaning}")
 
         embed = discord.Embed(
             title=title,
