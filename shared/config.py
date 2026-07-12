@@ -89,8 +89,37 @@ def get_all_role_ids(guild_id: int, *role_names: str) -> dict[str, int]:
 
 
 def get_vip_role_ids(guild_id: int) -> dict[str, int]:
+    """
+    Return semua role tier VIP: trial, traveler, companion, (scholar kalau
+    diisi), DAN patron.
+
+    FIX: di membership_settings.yml, blok `lifetime:` (berisi role_id Patron)
+    SEJAJAR dengan `roles:`, BUKAN nested di dalamnya:
+
+        membership:
+          roles:
+            trial: {...}
+            traveler: {...}
+            companion: {...}
+          lifetime:              # <- sejajar dengan "roles", bukan child-nya
+              role_id: ...
+              point_threshold: 24
+
+    Versi lama cuma baca cfg["roles"], jadi Patron TIDAK PERNAH masuk ke hasil
+    dict ini -> has_vip_role()/has_premium_role()/has_dic_access()/
+    get_member_tier() (semua di shared/checks.py) menolak member yang cuma
+    punya role Patron murni (tanpa Companion/Traveler menyertai, sesuai
+    TIER_ROLE_CHAIN di role_resolver.py: patron -> [patron] saja). Di-gabung
+    manual di sini supaya Patron ikut terhitung sebagai VIP role tanpa perlu
+    ubah caller manapun.
+    """
     cfg = _load_membership_cfg()
-    roles_cfg = cfg.get("roles", {})
+    roles_cfg = dict(cfg.get("roles", {}))
+
+    lifetime_cfg = cfg.get("lifetime", {})
+    if lifetime_cfg.get("role_id"):
+        roles_cfg = {**roles_cfg, "patron": lifetime_cfg}
+
     result = {}
     for tier_name, tier_data in roles_cfg.items():
         role_id = tier_data.get("role_id")
@@ -109,13 +138,29 @@ def get_staff_role_ids(guild_id: int) -> dict[str, int]:
 
 
 def get_tier_info(tier_name: str) -> dict:
+    """
+    Return info lengkap satu tier (name, role_id, duration_days, price_rp,
+    points, dst) dari membership_settings.yml.
+
+    FIX (bug yang sama seperti get_vip_role_ids): tier_name="patron" dulu
+    selalu return {} karena kode lama cuma cari di cfg["roles"], padahal data
+    Patron ada di cfg["lifetime"] (sejajar, bukan child dari "roles"). Sekarang
+    "patron" di-redirect ke situ.
+    """
     cfg = _load_membership_cfg()
+    if tier_name == "patron":
+        return cfg.get("lifetime", {})
     return cfg.get("roles", {}).get(tier_name, {})
 
 
 def get_lifetime_threshold() -> int:
+    """
+    FIX: sebelumnya baca cfg["roles"]["lifetime"]["point_threshold"], padahal
+    "lifetime" sejajar dengan "roles", bukan di dalamnya -> selalu fallback ke
+    default (30), TIDAK PERNAH membaca nilai 24 yang sudah diisi di YAML.
+    """
     cfg = _load_membership_cfg()
-    return int(cfg.get("roles", {}).get("lifetime", {}).get("point_threshold", 30))
+    return int(cfg.get("lifetime", {}).get("point_threshold", 30))
 
 
 # ============================================================================

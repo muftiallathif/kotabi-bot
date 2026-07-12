@@ -19,8 +19,14 @@ channel publik baru untuk Drifter, cukup edit file ini SEKALI SAJA.
 
 # Pemetaan channel ke hak akses per role VIP
 # Royal Guard & Prime Minister selalu dapat akses penuh di semua channel VIP
+#
+# FIX: "member-lounge" sebelumnya punya traveler: True, padahal secara
+# kebijakan (lihat MEMBERSHIP_STRATEGY_DECISIONS.md bagian 4 / tabel gap
+# fitur) member-lounge satu kelompok dengan deck-requests & immersion-race —
+# ketiganya Companion-exclusive. traveler diubah jadi False supaya konsisten
+# dengan dua channel lain di kelompok yang sama.
 VIP_CHANNEL_PERMISSIONS: dict[str, dict[str, bool]] = {
-    "member-lounge":    {"trial": True,  "traveler": True,  "companion": True,  "scholar": True,  "patron": True},
+    "member-lounge":    {"trial": True,  "traveler": False, "companion": True,  "scholar": True,  "patron": True},
     "immersion-log":    {"trial": True,  "traveler": True,  "companion": True,  "scholar": True,  "patron": True},
     "quiz-rank-up":     {"trial": True,  "traveler": True,  "companion": True,  "scholar": True,  "patron": True},
     "grammar-dic":      {"trial": True,  "traveler": False, "companion": True,  "scholar": True,  "patron": True},
