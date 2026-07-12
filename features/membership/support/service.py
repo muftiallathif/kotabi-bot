@@ -27,11 +27,10 @@ Penggunaan:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from features.membership.support.models import (
-    GrantMembership,
     HistoryEvent,
     MembershipRow,
 )
@@ -40,8 +39,14 @@ from shared.config import get_lifetime_threshold
 
 _log = logging.getLogger("bot.membership.service")
 
-# Tier hierarchy (untuk validasi downgrade)
-TIER_ORDER = ["trial", "traveler", "companion", "patron"]
+# Rolling window trial (hari) — ganti dari cycle kalender tetap (Jan-Ags vs
+# Sep-Des) ke jendela bergulir sejak klaim terakhir. Lihat
+# MEMBERSHIP_STRATEGY_DECISIONS.md bagian 6: cycle kalender lama punya celah
+# di batas Agustus/September (bisa klaim ulang cuma beda ~1 hari) dan tidak
+# adil untuk yang klaim di awal Januari (harus tunggu ~8 bulan). Rolling
+# window membuat semua orang konsisten "sekali per 6 bulan" dari titik klaim
+# masing-masing.
+TRIAL_ROLLING_WINDOW_DAYS = 180
 
 
 # ============================================================
@@ -132,10 +137,10 @@ class MembershipService:
         tier_before   = existing.tier        if existing else None
         expiry_before = existing.expires_at  if existing else None
 
-        # Hitung point baru — dibatasi maksimal `threshold` (60), tidak boleh
-        # lebih. Poin adalah indikator loyalitas menuju lifetime, bukan mata
-        # uang yang boleh menumpuk lewat cap; lihat KOTABI_MEMBERSHIP_SYSTEM_v3.md
-        # bagian "Kenapa threshold poin 60" — membeli lebih banyak dari yang
+        # Hitung point baru — dibatasi maksimal `threshold` (dibaca dari
+        # membership_settings.yml, saat ini 24), tidak boleh lebih. Poin
+        # adalah indikator loyalitas menuju lifetime, bukan mata uang yang
+        # boleh menumpuk lewat cap — membeli lebih banyak dari yang
         # dibutuhkan untuk mencapai threshold tidak menambah poin lagi.
         if existing and existing.is_lifetime:
             point_after = existing.point_count  # frozen
@@ -369,9 +374,13 @@ class MembershipService:
             source="trial",
         )
 
-        # Catat trial claim
-        cycle = get_current_trial_cycle(datetime.utcnow())
-        await self.repo.insert_trial_claim(user_id, guild_id, cycle)
+        # Catat trial claim. `trial_cycle` sekarang murni label historis
+        # (dulu dipakai untuk eligibility check berbasis cycle kalender —
+        # lihat get_current_trial_cycle() di bawah); eligibility yang
+        # sebenarnya sekarang dihitung dari get_last_trial_claim() (rolling
+        # window 180 hari), bukan dari string cycle ini.
+        cycle_label = get_current_trial_cycle(datetime.utcnow())
+        await self.repo.insert_trial_claim(user_id, guild_id, cycle_label)
 
         return result
 
@@ -449,6 +458,16 @@ class MembershipService:
         """
         Return (True, None) jika boleh trial.
         Return (False, reason) jika tidak boleh.
+
+        FIX (MEMBERSHIP_STRATEGY_DECISIONS.md bagian 6): eligibility sekarang
+        dihitung dari ROLLING WINDOW 180 hari sejak klaim TERAKHIR user ini
+        (get_last_trial_claim), bukan lagi dari cycle kalender tetap
+        (Jan-Ags vs Sep-Des). Cycle kalender lama punya dua masalah:
+        - celah ~1 hari di batas Agustus/September (klaim akhir Agustus bisa
+          klaim lagi awal September),
+        - tidak adil untuk yang klaim di awal Januari (harus tunggu ~8 bulan
+          sampai September, alih-alih ~6 bulan yang konsisten untuk semua
+          orang).
         """
         existing = await self.repo.get_membership(guild_id, user_id)
 
@@ -458,17 +477,19 @@ class MembershipService:
         if existing and existing.is_active:
             return False, "Kamu masih punya membership aktif."
 
-        now = datetime.utcnow()
-        current_cycle = get_current_trial_cycle(now)
-        claim = await self.repo.get_trial_claim(user_id, guild_id, current_cycle)
-
-        if claim:
-            next_cycle_dt = _next_cycle_start(now)
-            ts = int(next_cycle_dt.timestamp())
-            return False, (
-                f"Trial untuk periode ini sudah digunakan.\n"
-                f"Trial berikutnya tersedia pada <t:{ts}:F>."
-            )
+        last_claim = await self.repo.get_last_trial_claim(user_id, guild_id)
+        if last_claim:
+            claimed_at = last_claim.claimed_at
+            if claimed_at.tzinfo is None:
+                claimed_at = claimed_at.replace(tzinfo=timezone.utc)
+            next_eligible = claimed_at + timedelta(days=TRIAL_ROLLING_WINDOW_DAYS)
+            now = datetime.now(timezone.utc)
+            if now < next_eligible:
+                ts = int(next_eligible.timestamp())
+                return False, (
+                    f"Trial hanya bisa diambil sekali setiap {TRIAL_ROLLING_WINDOW_DAYS} hari.\n"
+                    f"Kamu bisa klaim trial lagi mulai <t:{ts}:F> (<t:{ts}:R>)."
+                )
 
         return True, None
 
@@ -480,6 +501,12 @@ class MembershipService:
         self, guild_id: int, user_id: int
     ) -> Optional[MembershipRow]:
         return await self.repo.get_membership(guild_id, user_id)
+
+    async def get_all_memberships(self, guild_id: int) -> dict[int, MembershipRow]:
+        """Passthrough ke repo.get_all_memberships() — 1 query untuk seluruh
+        guild, dipakai role_sync_check dan /membership_sync untuk menghindari
+        N+1 query (satu query SQL per member)."""
+        return await self.repo.get_all_memberships(guild_id)
 
     async def get_history(
         self,
@@ -506,19 +533,14 @@ class MembershipService:
 
 def get_current_trial_cycle(now: datetime) -> str:
     """
-    Jan–Ags → '2026A'
-    Sep–Des → '2026B'
+    Label historis saja (Jan-Ags -> '2026A', Sep-Des -> '2026B'), dipakai
+    untuk mengisi kolom `trial_cycle` yang masih ada di skema trial_claims.
+    TIDAK LAGI dipakai untuk menentukan eligibility — lihat
+    MembershipService.can_take_trial() yang sekarang pakai rolling window
+    180 hari dari get_last_trial_claim().
     """
     period = "A" if now.month < 9 else "B"
     return f"{now.year}{period}"
-
-
-def _next_cycle_start(now: datetime) -> datetime:
-    """Tanggal mulai cycle berikutnya."""
-    if now.month < 9:
-        return datetime(now.year, 9, 1)
-    else:
-        return datetime(now.year + 1, 1, 1)
 
 
 def _source_to_event(source: str) -> str:

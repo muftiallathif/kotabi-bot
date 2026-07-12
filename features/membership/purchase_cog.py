@@ -53,6 +53,11 @@ from features.membership.support.models import Order
 from features.membership.support.product_loader import ProductLoader
 from features.membership.support.repository import MembershipRepository
 from features.membership.support.role_resolver import RoleResolver
+from features.membership.support.helpers import (
+    send_dm as _send_dm,
+    fmt_price as _fmt_price,
+    fmt_progress as _fmt_progress,
+)
 from shared.config import (
     get_bank_account_info,
     get_lifetime_threshold,
@@ -85,28 +90,6 @@ PURCHASE_LOCK = asyncio.Lock()
 # ============================================================
 # HELPER
 # ============================================================
-
-def _fmt_price(amount: int) -> str:
-    return f"Rp{amount:,}".replace(",", ".")
-
-
-def _fmt_progress(point_count: int) -> str:
-    threshold = get_lifetime_threshold()
-    remaining = max(0, threshold - point_count)
-    return f"{point_count}/{threshold} poin ({remaining} poin lagi)"
-
-
-async def _send_dm(user_id: int, bot: KotabiBot, embed: discord.Embed) -> bool:
-    try:
-        user = bot.get_user(user_id) or await bot.fetch_user(user_id)
-        if not user.dm_channel:
-            await user.create_dm()
-        await user.send(embed=embed)
-        return True
-    except (discord.Forbidden, discord.NotFound):
-        _log.warning("Tidak bisa DM user %s", user_id)
-        return False
-
 
 async def _compute_phash(attachment: discord.Attachment) -> Optional[str]:
     """Hitung perceptual hash dari gambar bukti transfer. Return None kalau gagal."""

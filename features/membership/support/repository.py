@@ -39,6 +39,21 @@ FROM memberships
 WHERE guild_id = ? AND user_id = ?;
 """
 
+# Dipakai untuk batch-load semua membership di satu guild sekaligus
+# (fix N+1 query di role_sync_check / /membership_sync — lihat
+# MEMBERSHIP_STRATEGY_DECISIONS.md bagian 8 poin 2). Sebelumnya
+# get_membership() dipanggil satu-per-satu per member di dalam loop
+# `async for m in guild.fetch_members()`, artinya satu query SQL per
+# member. Method ini mengambil semuanya dalam SATU query, dipetakan ke
+# dict user_id -> MembershipRow di layer repository.
+_GET_ALL_MEMBERSHIPS_FOR_GUILD = """
+SELECT
+    guild_id, user_id, tier, granted_at, expires_at,
+    is_lifetime, active, point_count, granted_by, source
+FROM memberships
+WHERE guild_id = ?;
+"""
+
 _UPSERT_MEMBERSHIP = """
 INSERT INTO memberships (
     guild_id, user_id, tier, granted_at, expires_at,
@@ -246,6 +261,14 @@ FROM trial_claims
 WHERE user_id = ? AND guild_id = ? AND trial_cycle = ?;
 """
 
+_GET_LAST_TRIAL_CLAIM = """
+SELECT user_id, guild_id, trial_cycle, claimed_at
+FROM trial_claims
+WHERE user_id = ? AND guild_id = ?
+ORDER BY claimed_at DESC
+LIMIT 1;
+"""
+
 _INSERT_TRIAL_CLAIM = """
 INSERT OR IGNORE INTO trial_claims (user_id, guild_id, trial_cycle, claimed_at)
 VALUES (?, ?, ?, ?);
@@ -280,6 +303,30 @@ ORDER BY created_at DESC
 LIMIT ?;
 """
 
+# Dipindahkan dari SQL mentah di admin_cog.py (membership_purge_history) —
+# lihat MEMBERSHIP_STRATEGY_DECISIONS.md bagian 8 poin 5: "beberapa SQL
+# mentah masih ditulis langsung di cog, belum lewat repository.py".
+_PURGE_HISTORY = """
+DELETE FROM membership_history_v1 WHERE guild_id = ? AND user_id = ?;
+"""
+
+# Dipindahkan dari SQL mentah di admin_cog.py (membership_expiry_check FASE 1)
+# — dedup supaya warning H-3 tidak dikirim berkali-kali di hari yang sama.
+_HAS_RECENT_EVENT = """
+SELECT id FROM membership_history_v1
+WHERE guild_id = ? AND user_id = ? AND event = ?
+AND created_at > ?;
+"""
+
+# Dipindahkan dari SQL mentah di scheduler_cog.py (pending_order_check) —
+# dedup supaya reminder staff untuk 1 order pending tidak spam tiap 6 jam.
+_HAS_RECENT_ORDER_WARNING = """
+SELECT 1 FROM membership_history_v1
+WHERE event = 'order_pending_warned'
+  AND reason = ?
+  AND created_at > ?;
+"""
+
 
 # ============================================================
 # REPOSITORY CLASS
@@ -300,6 +347,16 @@ class MembershipRepository:
         if not row:
             return None
         return MembershipRow.from_row(row)
+
+    async def get_all_memberships(self, guild_id: int) -> dict[int, MembershipRow]:
+        """
+        Ambil SEMUA membership di satu guild dalam satu query, dipetakan
+        user_id -> MembershipRow. Dipakai oleh role_sync_check dan
+        /membership_sync supaya tidak lagi query satu-per-satu per member
+        (fix N+1 query — MEMBERSHIP_STRATEGY_DECISIONS.md bagian 8 poin 2).
+        """
+        rows = await self.bot.GET(_GET_ALL_MEMBERSHIPS_FOR_GUILD, (guild_id,))
+        return {row[1]: MembershipRow.from_row(row) for row in rows}
 
     async def upsert_membership(
         self,
@@ -373,11 +430,22 @@ class MembershipRepository:
         (order_id mod 100, lihat KOTABI_MEMBERSHIP_SYSTEM_v3.md bagian
         "Kode Unik Nominal"). Return order_id yang baru dibuat.
 
+        FIX (MEMBERSHIP_STRATEGY_DECISIONS.md bagian 8 poin 3): order_id
+        sekarang diambil langsung dari cursor.lastrowid (via
+        bot.RUN_LASTROWID) dalam operasi INSERT itu sendiri, BUKAN lewat
+        query terpisah "SELECT order_id ... ORDER BY created_at DESC LIMIT 1"
+        seperti sebelumnya. Pola lama itu berisiko kecil salah pada race
+        condition: kalau ada dua draft order dibuat nyaris bersamaan untuk
+        (guild_id, user_id) yang sama, query re-select bisa saja
+        mengembalikan order_id yang salah (milik insert lain yang menang
+        duluan). lastrowid dijamin akurat untuk koneksi yang baru saja
+        melakukan INSERT tersebut.
+
         Order di status draft ini murni draft privat milik user — belum
         masuk ke channel staff (baru masuk setelah confirm_order dipanggil).
         """
         now = datetime.utcnow()
-        await self.bot.RUN(
+        order_id = await self.bot.RUN_LASTROWID(
             _INSERT_DRAFT_ORDER,
             (
                 guild_id, user_id, product_key, product_version, product_name,
@@ -387,12 +455,7 @@ class MembershipRepository:
                 now.isoformat(),
             )
         )
-        row = await self.bot.GET_ONE(
-            "SELECT order_id FROM orders WHERE guild_id=? AND user_id=? ORDER BY created_at DESC LIMIT 1",
-            (guild_id, user_id)
-        )
-        order_id = row[0] if row else -1
-        if order_id != -1:
+        if order_id:
             await self.bot.RUN(_SET_UNIQUE_CODE, (order_id % 100, order_id))
         return order_id
 
@@ -524,6 +587,19 @@ class MembershipRepository:
             return None
         return TrialClaim.from_row(row)
 
+    async def get_last_trial_claim(
+        self, user_id: int, guild_id: int
+    ) -> Optional[TrialClaim]:
+        """
+        Klaim trial PALING BARU milik user ini, tanpa peduli `trial_cycle`-nya
+        apa. Dipakai oleh rolling-window eligibility check (180 hari sejak
+        klaim terakhir) — lihat MEMBERSHIP_STRATEGY_DECISIONS.md bagian 6.
+        """
+        row = await self.bot.GET_ONE(_GET_LAST_TRIAL_CLAIM, (user_id, guild_id))
+        if not row:
+            return None
+        return TrialClaim.from_row(row)
+
     async def insert_trial_claim(
         self, user_id: int, guild_id: int, trial_cycle: str
     ) -> None:
@@ -569,3 +645,37 @@ class MembershipRepository:
             (guild_id, user_id, user_id, limit)
         )
         return rows
+
+    async def purge_history(self, guild_id: int, user_id: int) -> None:
+        """
+        Hapus seluruh riwayat membership_history_v1 milik satu user.
+        Dipindahkan dari SQL mentah yang sebelumnya ditulis langsung di
+        admin_cog.py (/admin membership-purge-history) — lihat
+        MEMBERSHIP_STRATEGY_DECISIONS.md bagian 8 poin 5.
+        """
+        await self.bot.RUN(_PURGE_HISTORY, (guild_id, user_id))
+
+    async def has_recent_event(
+        self, guild_id: int, user_id: int, event: str, since: datetime
+    ) -> bool:
+        """
+        Cek apakah event dengan nama tertentu sudah pernah dicatat untuk user
+        ini sejak `since`. Dipakai untuk dedup notifikasi (mis. jangan kirim
+        warning H-3 dua kali di hari yang sama). Dipindahkan dari SQL mentah
+        di admin_cog.py (membership_expiry_check) — bagian 8 poin 5.
+        """
+        row = await self.bot.GET_ONE(
+            _HAS_RECENT_EVENT, (guild_id, user_id, event, since.isoformat())
+        )
+        return row is not None
+
+    async def has_recent_order_warning(self, order_id: int, since: datetime) -> bool:
+        """
+        Cek apakah reminder staff untuk satu order pending tertentu sudah
+        pernah dikirim sejak `since`. Dipindahkan dari SQL mentah di
+        scheduler_cog.py (pending_order_check) — bagian 8 poin 5.
+        """
+        row = await self.bot.GET_ONE(
+            _HAS_RECENT_ORDER_WARNING, (str(order_id), since.isoformat())
+        )
+        return row is not None

@@ -70,12 +70,12 @@ products:
         tier: patron
         lifetime: true
       point:
-        # Disamakan dengan lifetime.point_threshold (60) di membership_settings.yml
+        # Disamakan dengan lifetime.point_threshold (24) di membership_settings.yml
         # supaya /admin check-member tidak menampilkan progress poin yang
         # janggal untuk member yang sudah lifetime lewat pembelian langsung.
         # Tidak berpengaruh secara fungsional — lifetime sudah diset lewat
         # grants.membership.lifetime, bukan lewat threshold poin ini.
-        amount: 60
+        amount: 24
 
   # ----------------------------------------------------------
   # KELAS INTENSIF

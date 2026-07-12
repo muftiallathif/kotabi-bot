@@ -32,11 +32,14 @@ import discord
 from discord.ext import commands, tasks
 from discord.utils import utcnow
 
+
 from core.bot import KotabiBot
 from shared.config import get_membership_guild_id, get_order_review_channel_id
 from features.membership.support.repository import MembershipRepository
 from features.membership.support.role_resolver import RoleResolver
 from features.membership.support.service import MembershipService
+from features.membership.support.models import HistoryEvent
+from features.membership.support.helpers import send_dm as _send_dm
 
 _log = logging.getLogger("bot.membership_scheduler")
 
@@ -58,23 +61,6 @@ PENDING_WARN_DAYS   = 3
 
 # Order pending lebih dari ini → auto-cancel
 PENDING_CANCEL_DAYS = 7
-
-
-# ============================================================
-# HELPER
-# ============================================================
-
-async def _send_dm(user_id: int, bot: KotabiBot, embed: discord.Embed) -> bool:
-    try:
-        user = bot.get_user(user_id) or await bot.fetch_user(user_id)
-        if not user.dm_channel:
-            await user.create_dm()
-        await user.send(embed=embed)
-        return True
-    except (discord.Forbidden, discord.NotFound):
-        _log.warning("Tidak bisa DM user %s", user_id)
-        return False
-
 
 # ============================================================
 # COG
@@ -225,17 +211,8 @@ class MembershipScheduler(commands.Cog):
                 # WARN STAFF: pending > 3 hari (tapi belum 7 hari)
                 elif created_at < warn_threshold:
                     # Cek apakah sudah pernah diingatkan hari ini
-                    already_warned = await self.bot.GET_ONE(
-                        """
-                        SELECT 1 FROM membership_history_v1
-                        WHERE event = 'order_pending_warned'
-                          AND reason = ?
-                          AND created_at > ?
-                        """,
-                        (
-                            str(order.order_id),
-                            (now - timedelta(hours=23)).isoformat(),
-                        ),
+                    already_warned = await self.repo.has_recent_order_warning(
+                        order.order_id, now - timedelta(hours=23)
                     )
                     if already_warned:
                         continue
@@ -249,19 +226,10 @@ class MembershipScheduler(commands.Cog):
                         )
 
                     # Catat supaya tidak spam
-                    await self.bot.RUN(
-                        """
-                        INSERT INTO membership_history_v1
-                        (guild_id, user_id, event, reason, created_at)
-                        VALUES (?, ?, 'order_pending_warned', ?, ?)
-                        """,
-                        (
-                            GUILD_ID,
-                            order.user_id,
-                            str(order.order_id),
-                            now.isoformat(),
-                        ),
-                    )
+                    await self.repo.insert_history(HistoryEvent(
+                        guild_id=GUILD_ID, user_id=order.user_id,
+                        event="order_pending_warned", reason=str(order.order_id),
+                    ))
 
                     _log.info(
                         "Warned staff about pending order #%d", order.order_id
@@ -295,13 +263,16 @@ class MembershipScheduler(commands.Cog):
             errors   = 0
             total    = 0
 
+            # 1 query untuk seluruh guild, bukan 1 query per member (fix N+1).
+            memberships_by_user = await self.svc.get_all_memberships(guild.id)
+
             async for member in guild.fetch_members(limit=None):
                 if member.bot:
                     continue
 
                 total += 1
                 try:
-                    row       = await self.svc.get_membership(guild.id, member.id)
+                    row       = memberships_by_user.get(member.id)
                     tier      = row.tier      if row else None
                     is_active = row.is_active if row else False
                     changes   = await resolver.sync_member(member, tier, is_active)

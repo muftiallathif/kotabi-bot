@@ -41,6 +41,17 @@ class KotabiBot(commands.Bot):
                 await db.commit()
                 return cursor.rowcount
 
+    async def RUN_LASTROWID(self, query: str, parameters: tuple = ()) -> int:
+        """Sama seperti RUN(), tapi mengembalikan cursor.lastrowid alih-alih
+        rowcount. Dipakai saat kita butuh ID baris yang baru saja di-INSERT
+        (mis. create_draft_order() di membership/support/repository.py),
+        supaya tidak perlu SELECT terpisah yang rawan race condition."""
+        async with self._db_lock:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute(query, parameters)
+                await db.commit()
+                return cursor.lastrowid
+
     async def RUN_MANY(self, query: str, parameters_list: list) -> int:
         async with self._db_lock:
             async with aiosqlite.connect(self.db_path) as db:

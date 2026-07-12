@@ -32,8 +32,11 @@ Command:
   /kanji_reload  — muat ulang JSON + kedua CSV terjemahan tanpa restart bot
                    (Khusus Admin).
 
-Gating akses: sama seperti /grammar, lewat shared.checks.is_dic_access()
+Gating akses: sama seperti /bunpou, lewat shared.checks.has_dic_access()
 (Trial dapat, Traveler TIDAK dapat, Companion/Patron/staff/admin dapat).
+Command sendiri TERBUKA untuk semua role (mode list gratis) — hanya mode
+detail (isi `kanji` atau klik dropdown) yang di-gate. Lihat bagian 3.1/3.2
+strategi membership.
 """
 
 import csv
@@ -46,7 +49,7 @@ import discord
 from discord.ext import commands
 
 from core.bot import KotabiBot
-from shared.checks import is_dic_access
+from shared.checks import has_dic_access, MSG_DIC_DETAIL_ONLY
 
 _log = logging.getLogger("bot.kanji")
 
@@ -251,7 +254,11 @@ def _list_title(jlpt: str) -> str:
     return f"📚 Kamus Kanji — Level {jlpt}"
 
 
-def build_list_pages(entries: list[dict], jlpt: str) -> tuple[list[discord.Embed], list[list[dict]]]:
+def build_list_pages(
+    entries: list[dict], jlpt: str, show_meaning: bool = True
+) -> tuple[list[discord.Embed], list[list[dict]]]:
+    """Kolom arti HANYA ditampilkan kalau show_meaning=True (Companion ke
+    atas) — sama polanya dengan /bunpou (bagian 3.1)."""
     title = _list_title(jlpt)
     chunks = [entries[i:i + LIST_PAGE_SIZE] for i in range(0, len(entries), LIST_PAGE_SIZE)] or [[]]
     total_pages = len(chunks)
@@ -260,16 +267,22 @@ def build_list_pages(entries: list[dict], jlpt: str) -> tuple[list[discord.Embed
     for idx, chunk in enumerate(chunks, start=1):
         lines = []
         for e in chunk:
-            meaning = (e["meanings_en"] or "—").split(" | ")[0]
-            if len(meaning) > 50:
-                meaning = meaning[:47] + "..."
-            lines.append(f"**{e['kanji']}** — {meaning}")
+            if show_meaning:
+                meaning = (e["meanings_en"] or "—").split(" | ")[0]
+                if len(meaning) > 50:
+                    meaning = meaning[:47] + "..."
+                lines.append(f"**{e['kanji']}** — {meaning}")
+            else:
+                lines.append(f"**{e['kanji']}**")
         embed = discord.Embed(
             title=title,
             description="\n".join(lines) or "Tidak ada entri.",
             color=discord.Color.blurple(),
         )
-        embed.set_footer(text=f"Halaman {idx}/{total_pages} • Total {len(entries)} kanji")
+        footer = f"Halaman {idx}/{total_pages} • Total {len(entries)} kanji"
+        if not show_meaning:
+            footer += " • Arti terkunci, upgrade Companion untuk lihat detail"
+        embed.set_footer(text=footer)
         pages.append(embed)
 
     return pages, chunks
@@ -282,11 +295,18 @@ def build_list_pages(entries: list[dict], jlpt: str) -> tuple[list[discord.Embed
 class KanjiListView(discord.ui.View):
     """Paginator Prev/Next + dropdown loncat ke detail, sama pola dengan GrammarListView."""
 
-    def __init__(self, owner_id: int, pages: list[discord.Embed], page_entries: list[list[dict]]):
+    def __init__(
+        self,
+        owner_id: int,
+        pages: list[discord.Embed],
+        page_entries: list[list[dict]],
+        show_meaning: bool = True,
+    ):
         super().__init__(timeout=PAGINATOR_TIMEOUT_SECONDS)
         self.owner_id = owner_id
         self.pages = pages
         self.page_entries = page_entries
+        self.show_meaning = show_meaning
         self.index = 0
         self.message: Optional[discord.InteractionMessage] = None
         self._sync_buttons()
@@ -308,7 +328,10 @@ class KanjiListView(discord.ui.View):
         options = [
             discord.SelectOption(
                 label=e["kanji"],
-                description=((e["meanings_en"] or "—").split(" | ")[0])[:100],
+                description=(
+                    ((e["meanings_en"] or "—").split(" | ")[0])[:100]
+                    if self.show_meaning else "🔒 Upgrade Companion untuk lihat arti & detail"
+                ),
                 value=e["kanji"],
             )
             for e in entries
@@ -320,6 +343,12 @@ class KanjiListView(discord.ui.View):
     async def _on_select(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
             return await interaction.response.send_message("❌ Ini bukan pencarian kamu.", ephemeral=True)
+
+        # Celah arsitektur (bagian 3.2 strategi): dropdown ini interaksi
+        # komponen, bukan slash command baru — access check WAJIB dicek
+        # ulang di sini.
+        if not has_dic_access(interaction.user, interaction.guild_id):
+            return await interaction.response.send_message(MSG_DIC_DETAIL_ONLY, ephemeral=True)
 
         kanji_char = interaction.data["values"][0]
         bot: KotabiBot = interaction.client
@@ -466,17 +495,23 @@ class Kanji(commands.Cog):
         jlpt=[discord.app_commands.Choice(name=level, value=level) for level in JLPT_CHOICES]
     )
     @discord.app_commands.autocomplete(kanji=kanji_autocomplete)
-    @is_dic_access()
+    @discord.app_commands.guild_only()
     async def kanji(
         self,
         interaction: discord.Interaction,
         kanji: Optional[str] = None,
         jlpt: Optional[str] = None,
     ):
+        # Command TIDAK di-gate akses lagi — mode list terbuka untuk semua
+        # role. Access check detail dicek eksplisit di sini DAN di
+        # KanjiListView._on_select (celah dropdown — bagian 3.2 strategi).
         await interaction.response.defer(ephemeral=True)
 
         # Mode detail: kanji diisi -> jlpt diabaikan
         if kanji:
+            if not has_dic_access(interaction.user, interaction.guild_id):
+                return await interaction.followup.send(MSG_DIC_DETAIL_ONLY, ephemeral=True)
+
             row = await self.bot.GET_ONE(GET_ENTRY, (kanji,))
             if not row:
                 return await interaction.followup.send(
@@ -499,11 +534,12 @@ class Kanji(commands.Cog):
             return await interaction.followup.send(f"❌ Tidak ada kanji terdaftar untuk level {jlpt}.", ephemeral=True)
 
         entries = [{"kanji": r[0], "meanings_en": r[1], "jlpt": r[2]} for r in rows]
-        pages, page_entries = build_list_pages(entries, jlpt)
+        show_meaning = has_dic_access(interaction.user, interaction.guild_id)
+        pages, page_entries = build_list_pages(entries, jlpt, show_meaning=show_meaning)
         for p in pages:
             _add_requester_info(p, interaction.user)
 
-        view = KanjiListView(interaction.user.id, pages, page_entries)
+        view = KanjiListView(interaction.user.id, pages, page_entries, show_meaning=show_meaning)
         message = await interaction.followup.send(embed=pages[0], view=view, ephemeral=True, wait=True)
         view.message = message
 

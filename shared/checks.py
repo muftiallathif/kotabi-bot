@@ -4,6 +4,10 @@ shared/checks.py — Reusable Access Control untuk Kotabi Bot
 Semua role ID dibaca dari shared/server_map.yml + membership_settings.yml
 via shared/config.py. TIDAK ada hardcode ID di sini.
 
+Semua teks pesan dibaca dari shared/messages.py (Msg). TIDAK ada salinan
+teks pesan sendiri di sini — single source of truth untuk copy ada di
+messages.py.
+
 Penggunaan decorator:
     from shared.checks import is_vip, is_premium, is_staff, is_authorized
 
@@ -21,31 +25,13 @@ from discord import app_commands
 from typing import Optional
 
 from shared.config import get_vip_role_ids, get_paid_role_ids, get_staff_role_ids
+from shared.messages import Msg
 
 AUTHORIZED_USER_IDS: set[int] = {
     int(uid)
     for uid in os.getenv("AUTHORIZED_USERS", "").split(",")
     if uid.strip()
 }
-
-MSG_VIP_ONLY = (
-    "❌ Fitur ini hanya tersedia untuk **member VIP** Kerajaan Kotabi.\n\n"
-    "🎒 **Traveler** — Rp40.000 / bulan\n"
-    "🤝 **Companion** — Rp80.000 / bulan\n"
-    "👑 **Patron** — Seumur hidup\n\n"
-    "Hubungi staf untuk mendaftar! 🙇‍♂️"
-)
-
-MSG_PREMIUM_ONLY = (
-    "❌ Fitur ini hanya tersedia untuk **member berbayar** (bukan Trial).\n\n"
-    "🎒 **Traveler** — Rp40.000 / bulan\n"
-    "🤝 **Companion** — Rp80.000 / bulan\n\n"
-    "Hubungi staf untuk mendaftar! 🙇‍♂️"
-)
-
-MSG_STAFF_ONLY      = "❌ Anda tidak memiliki wewenang untuk menggunakan perintah ini."
-MSG_AUTHORIZED_ONLY = "❌ Anda tidak memiliki wewenang untuk menjalankan perintah ini."
-MSG_GUILD_ONLY      = "❌ Perintah ini hanya dapat digunakan di dalam server."
 
 
 def has_authorized_access(user: discord.Member | discord.User) -> bool:
@@ -110,7 +96,7 @@ def is_authorized():
     async def predicate(interaction: discord.Interaction) -> bool:
         if has_authorized_access(interaction.user):
             return True
-        await interaction.response.send_message(MSG_AUTHORIZED_ONLY, ephemeral=True)
+        await interaction.response.send_message(Msg.AUTHORIZED_ONLY, ephemeral=True)
         return False
     return app_commands.check(predicate)
 
@@ -119,11 +105,11 @@ def is_vip():
     async def predicate(interaction: discord.Interaction) -> bool:
         member = interaction.user
         if not isinstance(member, discord.Member):
-            await interaction.response.send_message(MSG_GUILD_ONLY, ephemeral=True)
+            await interaction.response.send_message(Msg.GUILD_ONLY, ephemeral=True)
             return False
         if has_vip_role(member, interaction.guild_id):
             return True
-        await interaction.response.send_message(MSG_VIP_ONLY, ephemeral=True)
+        await interaction.response.send_message(Msg.VIP_ONLY, ephemeral=True)
         return False
     return app_commands.check(predicate)
 
@@ -132,11 +118,11 @@ def is_premium():
     async def predicate(interaction: discord.Interaction) -> bool:
         member = interaction.user
         if not isinstance(member, discord.Member):
-            await interaction.response.send_message(MSG_GUILD_ONLY, ephemeral=True)
+            await interaction.response.send_message(Msg.GUILD_ONLY, ephemeral=True)
             return False
         if has_premium_role(member, interaction.guild_id):
             return True
-        await interaction.response.send_message(MSG_PREMIUM_ONLY, ephemeral=True)
+        await interaction.response.send_message(Msg.PREMIUM_ONLY, ephemeral=True)
         return False
     return app_commands.check(predicate)
 
@@ -145,29 +131,20 @@ def is_staff():
     async def predicate(interaction: discord.Interaction) -> bool:
         member = interaction.user
         if not isinstance(member, discord.Member):
-            await interaction.response.send_message(MSG_GUILD_ONLY, ephemeral=True)
+            await interaction.response.send_message(Msg.GUILD_ONLY, ephemeral=True)
             return False
         if has_staff_role(member):
             return True
-        await interaction.response.send_message(MSG_STAFF_ONLY, ephemeral=True)
+        await interaction.response.send_message(Msg.STAFF_ONLY, ephemeral=True)
         return False
     return app_commands.check(predicate)
 
 
-def is_vip_or_dm():
-    async def predicate(interaction: discord.Interaction) -> bool:
-        if interaction.guild is None:
-            return True
-        member = interaction.user
-        if has_vip_role(member, interaction.guild_id):
-            return True
-        await interaction.response.send_message(MSG_VIP_ONLY, ephemeral=True)
-        return False
-    return app_commands.check(predicate)
-
-MSG_DIC_ONLY = (
-    "❌ Fitur kamus ini tersedia untuk member **Trial**, **Companion**, atau **Patron**.\n\n"
-    "🎒 **Traveler** belum termasuk akses fitur ini.\n"
+MSG_DIC_DETAIL_ONLY = (
+    "🔒 **Detail lengkap** (arti, contoh kalimat, cara pakai) khusus member **Trial**, "
+    "**Companion**, atau **Patron**.\n\n"
+    "Kamu tetap bisa menjelajahi **daftar nama & level** semua entri secara gratis dan "
+    "unlimited — cuma detailnya yang terkunci.\n\n"
     "🤝 **Companion** — Rp80.000 / bulan\n"
     "👑 **Patron** — Seumur hidup\n\n"
     "Hubungi staf untuk upgrade! 🙇‍♂️"
@@ -190,16 +167,3 @@ def has_dic_access(member: discord.Member, guild_id: int = None) -> bool:
     vip_ids = get_vip_role_ids(gid)
     allowed_ids = {tier: rid for tier, rid in vip_ids.items() if tier != "traveler"}
     return any(rid in member_role_ids for rid in allowed_ids.values())
-
-
-def is_dic_access():
-    async def predicate(interaction: discord.Interaction) -> bool:
-        member = interaction.user
-        if not isinstance(member, discord.Member):
-            await interaction.response.send_message(MSG_GUILD_ONLY, ephemeral=True)
-            return False
-        if has_dic_access(member, interaction.guild_id):
-            return True
-        await interaction.response.send_message(MSG_DIC_ONLY, ephemeral=True)
-        return False
-    return app_commands.check(predicate)

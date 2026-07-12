@@ -83,9 +83,9 @@ class PointGrantHandler:
         threshold = get_lifetime_threshold()
 
         point_before = existing.point_count
-        # Dibatasi maksimal `threshold` (60) — poin bukan mata uang yang boleh
-        # menumpuk lewat cap. Lihat KOTABI_MEMBERSHIP_SYSTEM_v3.md bagian
-        # "Kenapa threshold poin 60" dan service.py grant() untuk rule yang sama.
+        # Dibatasi maksimal `threshold` (dibaca dari membership_settings.yml,
+        # saat ini 24) — poin bukan mata uang yang boleh menumpuk lewat cap.
+        # Lihat service.py grant() untuk rule yang sama.
         point_after  = min(point_before + amount, threshold)
 
         await self.repo.set_point_count(guild_id, user_id, point_after)

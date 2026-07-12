@@ -22,18 +22,6 @@ from shared.config import get_role_id
 
 _log = logging.getLogger("bot.membership.role_resolver")
 
-# Urutan tier dari terendah ke tertinggi
-TIER_ORDER = ["trial", "traveler", "companion", "patron"]
-
-# Mapping tier ke role key di server_map.yml
-# Key di sini harus sama persis dengan key di server_map.yml → roles
-TIER_TO_ROLE_KEY: dict[str, str] = {
-    "trial":     "trial",
-    "traveler":  "traveler",
-    "companion": "companion",
-    "patron":    "patron",
-}
-
 # Companion dan di atasnya otomatis dapat role Traveler juga
 # Patron tidak mendapat role Companion/Traveler — hanya Patron
 TIER_ROLE_CHAIN: dict[str, list[str]] = {
@@ -151,17 +139,23 @@ class RoleResolver:
     async def sync_member(
         self, member: discord.Member, tier: Optional[str], is_active: bool
     ) -> dict:
-        """
-        Sinkronisasi role Discord dengan state membership dari database.
-        Dipakai oleh /membership sync dan scheduler.
-        Return dict berisi perubahan yang dilakukan.
-        """
         changes = {"added": [], "removed": []}
 
         if not is_active or tier is None:
-            # Tidak ada membership aktif → cabut semua
+            # Tidak ada membership aktif → cabut semua, lalu kembalikan ke Drifter
             await self.remove_all_membership_roles(member)
             changes["removed"] = ALL_MEMBERSHIP_ROLE_KEYS
+
+            drifter = self._get_role("drifter")
+            if drifter and drifter not in member.roles:
+                try:
+                    await member.add_roles(drifter, reason="Membership sync — kembali ke Drifter")
+                    changes["added"].append("drifter")
+                except discord.Forbidden:
+                    _log.error(
+                        "Forbidden: cannot add Drifter role to %s (%d) saat sync",
+                        member.name, member.id,
+                    )
             return changes
 
         # Hitung role yang seharusnya ada

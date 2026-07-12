@@ -24,6 +24,7 @@ from typing import Optional
 import discord
 from discord.ext import commands, tasks
 from discord.utils import utcnow
+from features.membership.support.models import MembershipRow, HistoryEvent
 
 from core.bot import KotabiBot
 from shared.config import (
@@ -37,6 +38,7 @@ from features.membership.support.grants.engine import ApplyResult, GrantEngine
 from features.membership.support.models import MembershipRow
 from features.membership.support.product_loader import ProductLoader
 from features.membership.support.role_resolver import RoleResolver
+from features.membership.support.helpers import send_dm as _send_dm, fmt_progress as _fmt_progress
 from features.membership.support.service import (
     MembershipService,
     get_current_trial_cycle,
@@ -74,25 +76,6 @@ def _can_manage(member: discord.Member) -> bool:
     if member.id in AUTHORIZED_USER_IDS:
         return True
     return bool(MOD_ROLE_IDS and any(r.id in MOD_ROLE_IDS for r in member.roles))
-
-
-def _fmt_progress(point_count: int) -> str:
-    threshold = get_lifetime_threshold()
-    remaining = max(0, threshold - point_count)
-    return f"{point_count}/{threshold} poin ({remaining} poin lagi)"
-
-
-async def _send_dm(user_id: int, bot: KotabiBot, embed: discord.Embed) -> bool:
-    try:
-        user = bot.get_user(user_id) or await bot.fetch_user(user_id)
-        if not user.dm_channel:
-            await user.create_dm()
-        await user.send(embed=embed)
-        return True
-    except (discord.Forbidden, discord.NotFound):
-        _log.warning("Tidak bisa DM user %s", user_id)
-        return False
-
 
 async def _apply_discord_role(
     guild: discord.Guild,
@@ -662,10 +645,7 @@ class Membership(commands.Cog):
                 "❌ Hanya admin yang bisa purge history.", ephemeral=True
             )
 
-        await self.bot.RUN(
-            "DELETE FROM membership_history_v1 WHERE guild_id = ? AND user_id = ?",
-            (interaction.guild_id, user.id),
-        )
+        await self.svc.repo.purge_history(interaction.guild_id, user.id)
         await interaction.followup.send(
             f"✅ History membership {user.mention} telah dihapus.", ephemeral=True
         )
@@ -692,12 +672,15 @@ class Membership(commands.Cog):
         fixed    = 0
         errors   = 0
 
+        # 1 query untuk seluruh guild, bukan 1 query per member (fix N+1).
+        memberships_by_user = await self.svc.get_all_memberships(guild.id)
+
         # Ambil semua member guild
         async for m in guild.fetch_members(limit=None):
             if m.bot:
                 continue
             try:
-                row = await self.svc.get_membership(guild.id, m.id)
+                row = memberships_by_user.get(m.id)
                 tier      = row.tier      if row else None
                 is_active = row.is_active if row else False
                 changes   = await resolver.sync_member(m, tier, is_active)
@@ -737,13 +720,8 @@ class Membership(commands.Cog):
                     continue
 
                 # Cek apakah sudah pernah dikirim warning hari ini
-                warned_today = await self.bot.GET_ONE(
-                    """
-                    SELECT id FROM membership_history_v1
-                    WHERE guild_id=? AND user_id=? AND event='warned_expiry'
-                    AND created_at > ?
-                    """,
-                    (guild.id, row.user_id, (now - timedelta(hours=23)).isoformat()),
+                warned_today = await self.svc.repo.has_recent_event(
+                    guild.id, row.user_id, "warned_expiry", now - timedelta(hours=23)
                 )
                 if warned_today:
                     continue
@@ -764,14 +742,10 @@ class Membership(commands.Cog):
                 embed.add_field(name="Action", value="Hubungi admin untuk renewal.", inline=False)
 
                 await _send_dm(row.user_id, self.bot, embed)
-                await self.bot.RUN(
-                    """
-                    INSERT INTO membership_history_v1
-                    (guild_id, user_id, event, tier_after, created_at)
-                    VALUES (?, ?, 'warned_expiry', ?, ?)
-                    """,
-                    (guild.id, row.user_id, row.tier, now.isoformat()),
-                )
+                await self.svc.repo.insert_history(HistoryEvent(
+                    guild_id=guild.id, user_id=row.user_id, event="warned_expiry",
+                    tier_after=row.tier,
+                ))
 
             # --------------------------------------------------------
             # FASE 2 — Expired (semua tier termasuk trial)
@@ -784,7 +758,7 @@ class Membership(commands.Cog):
                     target = guild.get_member(row.user_id)
                     if target:
                         resolver = RoleResolver(guild)
-                        await resolver.remove_tier(target, row.tier)
+                        await resolver.revoke_to_drifter(target, row.tier)
 
                     if row.tier == "trial":
                         embed = discord.Embed(

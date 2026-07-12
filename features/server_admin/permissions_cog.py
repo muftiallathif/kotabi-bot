@@ -11,7 +11,6 @@ Commands:
 
 import discord
 import json
-import os
 import io
 import logging
 from datetime import datetime, timezone
@@ -27,13 +26,6 @@ from features.server_admin.support.permission_table import (
 )
 
 _log = logging.getLogger(__name__)
-
-# ============================================================================
-# KONFIGURASI PATH
-# ============================================================================
-
-# Path ke file server_backup JSON (yang di-export oleh /export_server)
-SERVER_BACKUP_PATH = os.getenv("SERVER_BACKUP_PATH", "config/server_backup.json")
 
 # ============================================================================
 # FUNGSI PEMBANTU
@@ -54,18 +46,6 @@ def _get_channel_by_name(guild: discord.Guild, channel_name: str) -> Optional[di
         if ch.name.lower() == name_lower:
             return ch
     return None
-
-
-def _load_backup(path: str) -> Optional[dict]:
-    """Membaca file JSON backup server."""
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        _log.error("Gagal membaca file backup: %s", e)
-        return None
 
 
 async def _apply_vip_channel_permission(

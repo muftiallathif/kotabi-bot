@@ -58,13 +58,6 @@ def _load() -> dict[str, Product]:
     return _cache
 
 
-def reload() -> None:
-    """Paksa reload products.yml dari disk."""
-    global _cache
-    _cache = None
-    _load()
-
-
 class ProductLoader:
     def get(self, product_id: str) -> Optional[Product]:
         """Return Product atau None jika tidak ditemukan."""

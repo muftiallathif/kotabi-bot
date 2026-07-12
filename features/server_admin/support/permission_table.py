@@ -17,9 +17,6 @@ channel publik baru untuk Drifter, cukup edit file ini SEKALI SAJA.
 # False = deny  (tidak bisa lihat sama sekali)
 # ============================================================================
 
-# Nama role VIP yang dikelola (urutan penting untuk display)
-VIP_ROLES = ["trial", "traveler", "companion", "scholar", "patron"]
-
 # Pemetaan channel ke hak akses per role VIP
 # Royal Guard & Prime Minister selalu dapat akses penuh di semua channel VIP
 VIP_CHANNEL_PERMISSIONS: dict[str, dict[str, bool]] = {

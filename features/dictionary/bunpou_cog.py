@@ -73,7 +73,7 @@ import discord
 from discord.ext import commands
 
 from core.bot import KotabiBot
-from shared.checks import is_dic_access
+from shared.checks import has_dic_access, MSG_DIC_DETAIL_ONLY
 
 from .grammar_fields import FIELD_NAMES, KEY_FIELD, CATEGORY_FIELDS
 
@@ -97,19 +97,10 @@ _COLUMN_DEFS = ", ".join(
 )
 CREATE_TABLE = f"CREATE TABLE IF NOT EXISTS {TABLE_NAME} ({_COLUMN_DEFS});"
 
-# Kategori yang TIDAK ditampilkan ke user sama sekali (§8: "Template Toggle").
-HIDDEN_CATEGORIES = {"Template Toggle"}
 # Field individual yang tidak ditampilkan walau kategorinya ditampilkan
 # (NoteID = key internal, Sort = urutan tampilan internal, bukan info
 # linguistik — lihat panduan §7).
 HIDDEN_FIELDS = {"NoteID", "Sort"}
-# Kategori yang dipakai untuk membangun JUDUL embed, bukan body halaman
-# (§8: GrammarPattern + GrammarFurigana + GrammarStar, + GrammarBracket
-# kalau terisi).
-TITLE_CATEGORY = "Info Pola"
-# Kategori yang dilipat jadi footer (level/frequency/Tags), bukan halaman
-# tersendiri — Sort tetap disembunyikan walau ada di kategori yang sama.
-FOOTER_CATEGORY = "Pengelompokan/Tag"
 
 DELETE_ALL = f"DELETE FROM {TABLE_NAME};"
 INSERT_ENTRY = (
@@ -484,10 +475,6 @@ def _group_by_slot(fields: list[str], entry: dict) -> tuple[list[tuple[str, str]
 # pasang lagi rendering slot Audio/Gambar (lihat git history cog ini).
 DISPLAYED_CATEGORIES = ["Cara Penyambungan", "Makna", "Catatan Penjelasan", "Contoh Kalimat"]
 
-# §8: "tidak perlu pagination ... kecuali kalimat contohnya banyak
-# (5-6 slot terisi)". Ambil ambang bawahnya (5) sebagai titik potong.
-MANY_SENTENCES_THRESHOLD = 5
-
 
 def render_category(entry: dict, category_name: str, fields: list[str]) -> list[tuple[str, str]]:
     """Render satu kategori (dari CATEGORY_FIELDS) jadi list (nama_field_embed,
@@ -539,27 +526,24 @@ def render_category(entry: dict, category_name: str, fields: list[str]) -> list[
 
 
 def _sentence_slot_count(entry: dict) -> int:
-    """Hitung berapa slot 例文 (Contoh Kalimat) yang benar-benar terisi,
-    dipakai untuk menentukan apakah perlu pagination 2 halaman (§8)."""
+    """Hitung berapa slot 例文 (Contoh Kalimat) yang benar-benar terisi."""
     _, slotted = _group_by_slot(CATEGORY_FIELDS["Contoh Kalimat"], entry)
     return len(slotted)
 
 
 def build_detail_pages(entry: dict) -> list[discord.Embed]:
-    """Bangun halaman detail sesuai §8 panduan ringkas: DEFAULT 1 embed
-    tunggal (接続+makna+catatan+contoh semua di satu embed, seperti contoh
-    やら di panduan) — HANYA dipecah jadi 2 halaman kalau kalimat contohnya
-    banyak (>= MANY_SENTENCES_THRESHOLD slot terisi), dan kalau dipecah,
-    halaman 1 tetap berisi 接続+意味+備考 + catatan singkat "lihat halaman
-    berikutnya", halaman 2 khusus 例文 lengkap. Tidak pernah lebih dari 2
-    halaman, dan Audio & Gambar tidak pernah dirender (lihat
+    """Bangun halaman detail: SELALU 2 halaman kalau ada kalimat contoh —
+    halaman 1 berisi 接続+意味+備考 (+ penunjuk singkat ke halaman 2),
+    halaman 2 khusus 例文 (Contoh Kalimat) lengkap. Kalau entri kebetulan
+    tidak punya kalimat contoh sama sekali (seharusnya tidak terjadi kalau
+    validator dijalankan, karena minimal 1 kalimat wajib), fallback ke 1
+    halaman tunggal. Audio & Gambar tidak pernah dirender (lihat
     DISPLAYED_CATEGORIES)."""
     color = LEVEL_COLOR.get(entry.get("level"), discord.Color.blurple())
     title = f"📖 {_entry_title(entry)}"
     footer_text = _entry_footer(entry)
 
     sentence_count = _sentence_slot_count(entry)
-    split_sentences = sentence_count >= MANY_SENTENCES_THRESHOLD
 
     main_categories = [c for c in DISPLAYED_CATEGORIES if c != "Contoh Kalimat"]
     main_fields: list[tuple[str, str]] = []
@@ -570,13 +554,7 @@ def build_detail_pages(entry: dict) -> list[discord.Embed]:
 
     pages: list[discord.Embed] = []
 
-    if not split_sentences:
-        # 1 embed tunggal — kasus default/mayoritas entri.
-        embed = discord.Embed(title=title, color=color)
-        for name, value in main_fields + sentence_fields:
-            _add_long_field(embed, name, [value])
-        pages.append(embed)
-    else:
+    if sentence_fields:
         # Halaman 1: info pola + makna + catatan, + penunjuk ke halaman 2.
         page1 = discord.Embed(title=title, color=color)
         for name, value in main_fields:
@@ -593,6 +571,13 @@ def build_detail_pages(entry: dict) -> list[discord.Embed]:
         for name, value in sentence_fields:
             _add_long_field(page2, name, [value])
         pages.append(page2)
+    elif main_fields:
+        # Tidak ada kalimat contoh sama sekali — 1 halaman tunggal saja,
+        # tidak ada gunanya bikin halaman 2 kosong.
+        embed = discord.Embed(title=title, color=color)
+        for name, value in main_fields:
+            _add_long_field(embed, name, [value])
+        pages.append(embed)
 
     if not pages:
         # Fallback kalau entri kosong total selain Info Pola (seharusnya
@@ -630,7 +615,12 @@ def _list_title(level: Optional[str]) -> str:
     return "📚 Semua Entri Kamus Grammar (Ringkas)"
 
 
-def build_list_pages(entries: list[dict], level: Optional[str]) -> tuple[list[discord.Embed], list[list[dict]]]:
+def build_list_pages(
+    entries: list[dict], level: Optional[str], show_meaning: bool = True
+) -> tuple[list[discord.Embed], list[list[dict]]]:
+    """Kolom arti HANYA ditampilkan kalau show_meaning=True (Companion ke
+    atas) — sesuai bagian 3.1: mode list tetap terbuka penuh untuk semua
+    role (nama pola + level), tapi payoff (artinya) khusus yang bayar."""
     title = _list_title(level)
     chunks = [entries[i:i + LIST_PAGE_SIZE] for i in range(0, len(entries), LIST_PAGE_SIZE)] or [[]]
     total_pages = len(chunks)
@@ -639,27 +629,32 @@ def build_list_pages(entries: list[dict], level: Optional[str]) -> tuple[list[di
     for idx, chunk in enumerate(chunks, start=1):
         lines = []
         for e in chunk:
-            meaning = (e["GrammarMeaningID"] or "—").split(";")[0].strip()
-            if len(meaning) > 60:
-                meaning = meaning[:57] + "..."
-
             pattern = e["GrammarPattern"]
             furigana = e["GrammarFurigana"]
             # Kalau pola sudah murni kana, furigana identik dengan pattern
             # (§3.1) — jangan diulang tampilkannya (mis. "あいだ（あいだ）").
             # Hanya tampilkan furigana kalau memang beda (pola pakai kanji).
             name_part = pattern if furigana == pattern else f"{pattern}（{furigana}）"
-
             level_tag = f"`{e['level']}`" if e["level"] else ""
             header_line = f"**{name_part}** {level_tag}".rstrip()
-            lines.append(f"{header_line}\n{meaning}")
+
+            if show_meaning:
+                meaning = (e["GrammarMeaningID"] or "—").split(";")[0].strip()
+                if len(meaning) > 60:
+                    meaning = meaning[:57] + "..."
+                lines.append(f"{header_line}\n{meaning}")
+            else:
+                lines.append(header_line)
 
         embed = discord.Embed(
             title=title,
             description="\n\n".join(lines) or "Tidak ada entri.",
             color=discord.Color.blurple(),
         )
-        embed.set_footer(text=f"Halaman {idx}/{total_pages} • Total {len(entries)} entri")
+        footer = f"Halaman {idx}/{total_pages} • Total {len(entries)} entri"
+        if not show_meaning:
+            footer += " • Arti terkunci, upgrade Companion untuk lihat detail"
+        embed.set_footer(text=footer)
         pages.append(embed)
 
     return pages, chunks
@@ -713,11 +708,22 @@ class BunpouPaginatorView(discord.ui.View):
 
 
 class BunpouListView(discord.ui.View):
-    def __init__(self, owner_id: int, pages: list[discord.Embed], page_entries: list[list[dict]]):
+    def __init__(
+        self,
+        owner_id: int,
+        pages: list[discord.Embed],
+        page_entries: list[list[dict]],
+        show_meaning: bool = True,
+    ):
         super().__init__(timeout=PAGINATOR_TIMEOUT_SECONDS)
         self.owner_id = owner_id
         self.pages = pages
         self.page_entries = page_entries
+        # Dropdown "pilih untuk detail" adalah titik masuk detail TERPISAH
+        # dari command awal — akses detail dicek ULANG di _on_select(),
+        # bukan cuma diwariskan dari sini. show_meaning di sini cuma dipakai
+        # untuk teks deskripsi dropdown.
+        self.show_meaning = show_meaning
         self.index = 0
         self.message: Optional[discord.InteractionMessage] = None
         self._sync_buttons()
@@ -739,7 +745,10 @@ class BunpouListView(discord.ui.View):
         options = [
             discord.SelectOption(
                 label=f"{e['GrammarPattern']} ({e['GrammarFurigana']})"[:100],
-                description=(e["GrammarMeaningID"] or "—").split(";")[0].strip()[:100],
+                description=(
+                    (e["GrammarMeaningID"] or "—").split(";")[0].strip()[:100]
+                    if self.show_meaning else "🔒 Upgrade Companion untuk lihat arti & detail"
+                ),
                 value=e[KEY_FIELD],
             )
             for e in entries
@@ -755,6 +764,12 @@ class BunpouListView(discord.ui.View):
     async def _on_select(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
             return await interaction.response.send_message("❌ Ini bukan pencarian kamu.", ephemeral=True)
+
+        # Celah arsitektur (bagian 3.2 strategi): dropdown ini interaksi
+        # komponen, bukan slash command baru — access check WAJIB dicek
+        # ulang di sini, bukan cuma diwariskan dari command awal.
+        if not has_dic_access(interaction.user, interaction.guild_id):
+            return await interaction.response.send_message(MSG_DIC_DETAIL_ONLY, ephemeral=True)
 
         note_id = interaction.data["values"][0]
         bot: KotabiBot = interaction.client
@@ -867,17 +882,25 @@ class Bunpou(commands.Cog):
         level=[discord.app_commands.Choice(name=lvl, value=lvl) for lvl in LEVEL_CHOICES]
     )
     @discord.app_commands.autocomplete(pola=bunpou_autocomplete)
-    @is_dic_access()
+    @discord.app_commands.guild_only()
     async def bunpou(
         self,
         interaction: discord.Interaction,
         pola: Optional[str] = None,
         level: Optional[str] = None,
     ):
+        # Command TIDAK di-gate akses lagi — mode list terbuka untuk semua
+        # role (termasuk Drifter tanpa membership sama sekali). Access check
+        # detail dicek eksplisit di sini DAN di BunpouListView._on_select
+        # (celah dropdown — lihat bagian 3.2 strategi).
         await interaction.response.defer(ephemeral=True)
 
         # Mode detail: pola diisi.
         if pola:
+            if not has_dic_access(interaction.user, interaction.guild_id):
+                await interaction.followup.send(MSG_DIC_DETAIL_ONLY, ephemeral=True)
+                return
+
             row = await self.bot.GET_ONE(GET_ENTRY, (pola,))
             if not row:
                 await interaction.followup.send(
@@ -910,11 +933,12 @@ class Bunpou(commands.Cog):
             {"NoteID": r[0], "GrammarPattern": r[1], "GrammarFurigana": r[2], "GrammarMeaningID": r[3], "level": r[4]}
             for r in rows
         ]
-        pages, page_entries = build_list_pages(entries, level)
+        show_meaning = has_dic_access(interaction.user, interaction.guild_id)
+        pages, page_entries = build_list_pages(entries, level, show_meaning=show_meaning)
         for p in pages:
             _add_requester_info(p, interaction.user)
 
-        view = BunpouListView(interaction.user.id, pages, page_entries)
+        view = BunpouListView(interaction.user.id, pages, page_entries, show_meaning=show_meaning)
         message = await interaction.followup.send(embed=pages[0], view=view, ephemeral=True, wait=True)
         view.message = message
 
