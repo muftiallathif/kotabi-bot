@@ -28,7 +28,7 @@ channel publik baru untuk Drifter, cukup edit file ini SEKALI SAJA.
 VIP_CHANNEL_PERMISSIONS: dict[str, dict[str, bool]] = {
     "member-lounge":    {"trial": True,  "traveler": False, "companion": True,  "scholar": True,  "patron": True},
     "immersion-log":    {"trial": True,  "traveler": True,  "companion": True,  "scholar": True,  "patron": True},
-    "quiz-rank-up":     {"trial": True,  "traveler": True,  "companion": True,  "scholar": True,  "patron": True},
+    "quiz-rank-up":     {"trial": True,  "traveler": True,  "companion": True,  "scholar": True,  "patron": True, "drifter": True},
     "grammar-dic":      {"trial": True,  "traveler": False, "companion": True,  "scholar": True,  "patron": True},
     "kotoba-dic":       {"trial": True,  "traveler": False, "companion": True,  "scholar": True,  "patron": True},
     "kanji-dic":        {"trial": True,  "traveler": False, "companion": True,  "scholar": True,  "patron": True},
