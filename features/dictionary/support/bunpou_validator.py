@@ -29,14 +29,14 @@ import sys
 from typing import NamedTuple
 
 try:
-    from features.dictionary.grammar_fields import FIELD_NAMES, KEY_FIELD
+    from features.dictionary.bunpou_fields import FIELD_NAMES, KEY_FIELD
 except ImportError:
     # Fallback kalau dijalankan langsung (mis. `python3 grammar_validator.py`)
     # tanpa PYTHONPATH di-set ke root repo — tambahkan root repo secara manual
     # (features/dictionary/support/ -> naik 3 level ke root).
     import os
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
-    from features.dictionary.grammar_fields import FIELD_NAMES, KEY_FIELD
+    from features.dictionary.bunpou_fields import FIELD_NAMES, KEY_FIELD
 
 
 class Issue(NamedTuple):

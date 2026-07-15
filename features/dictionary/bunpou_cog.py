@@ -3,7 +3,7 @@ features/dictionary/bunpou_cog.py — Kamus Grammar Jepang versi ringkas (/bunpo
 =================================================================================
 Menggantikan features/dictionary/grammar_cog.py (format 15-bagian ①-⑮, 4 CSV
 relasional) SEPENUHNYA. /bunpou memakai format flat/ringkas, 1 CSV datar:
-    grammar-notes-master.csv   (91 kolom, key field NoteID)
+    bunpou-notes-master.csv   (91 kolom, key field NoteID)
 
 Mengikuti "Panduan Membuat Entri Kamus Grammar Bahasa Jepang (Versi Ringkas)"
 (panduan-kamus-grammar-versi-ringkas.md), khususnya bagian 8 (Rencana Tampilan
@@ -75,7 +75,7 @@ from discord.ext import commands
 from core.bot import KotabiBot
 from shared.checks import has_dic_access, MSG_DIC_DETAIL_ONLY
 
-from .grammar_fields import FIELD_NAMES, KEY_FIELD, CATEGORY_FIELDS
+from .bunpou_fields import FIELD_NAMES, KEY_FIELD, CATEGORY_FIELDS
 
 _log = logging.getLogger("bot.bunpou")
 
@@ -83,7 +83,7 @@ _log = logging.getLogger("bot.bunpou")
 # PATH & SKEMA
 # ============================================================================
 
-CSV_PATH = os.getenv("ALT_BUNPOU_CSV_PATH") or "features/dictionary/grammar-notes-master.csv"
+CSV_PATH = os.getenv("ALT_BUNPOU_CSV_PATH") or "features/dictionary/bunpou-notes-master.csv"
 
 TABLE_NAME = "bunpou_entries"
 
