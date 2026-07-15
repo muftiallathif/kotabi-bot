@@ -34,9 +34,13 @@ class DatabaseBackup(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="post_db", description="Mengompres database SQLite ke Gzip dan mengirimkannya sebagai cadangan (Khusus Admin).")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def post_db(self, interaction: discord.Interaction):
+    @app_commands.command(
+        name="backup_database",
+        description="Mengompres database SQLite ke Gzip dan mengirimkannya sebagai cadangan (Khusus Admin).",
+    )
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def backup_database(self, interaction: discord.Interaction):
         """Slash Command untuk memicu pengunggahan file cadangan database terkompresi secara aman."""
         # Menunda respon dengan mode Ephemeral agar proses pengiriman aman dan tidak terlihat oleh warga biasa
         await interaction.response.defer(ephemeral=True)

@@ -1,11 +1,21 @@
 """
 structure_cog.py — Penataan Ulang Struktur Kategori & Channel Kotabi
 ===========================================================================
-VIP_CHANNEL_PERMISSIONS dan PUBLIC_CHANNELS_FOR_DRIFTER sekarang di-import
-dari features/server_admin/support/permission_table.py — satu-satunya sumber
-kebenaran, dipakai bersama oleh permissions_cog.py. Role ID TIDAK disalin
-manual; semuanya di-resolve lewat shared.config.get_role_id() dari
-shared/server_map.yml.
+VIP_CHANNEL_PERMISSIONS dan PUBLIC_CHANNELS_FOR_DRIFTER di-import dari
+features/server_admin/support/permission_table.py — satu-satunya sumber
+kebenaran, dipakai bersama oleh permissions_cog.py.
+
+CATATAN (fix duplikasi): logic PENERAPAN permission (apply_vip_channel_permission,
+apply_drifter_permission, get_role, get_channel_by_name, send_paginated) TIDAK
+lagi didefinisikan di sini — di-import dari
+features/server_admin/support/permission_engine.py, sama seperti yang dipakai
+permissions_cog.py (/restore). Hanya SEKALI didefinisikan sekarang.
+
+Yang TETAP eksklusif di file ini (bukan bagian dari permission_engine.py):
+STRUCTURE_BLUEPRINT, _get_or_create_category(), _find_text_or_voice(), dan
+_apply_structure() — logic kategori & posisi channel, yang justru menjadi
+pembeda /setup_structure (struktur + permission) dari /restore (permission
+saja).
 
 PERUBAHAN (lihat DEVELOPMENT_GUIDE.md / catatan restrukturisasi channel):
   - quiz-public-1/2/3 (text) digabung jadi satu Forum Channel
@@ -18,11 +28,13 @@ PERUBAHAN (lihat DEVELOPMENT_GUIDE.md / catatan restrukturisasi channel):
     "➕ Join to Create", dikelola oleh
     features/social/voice_jtc_cog.py.
 
-Commands:
-  /setup_structure   — Membuat/menata kategori, memindahkan channel ke
-                        kategori & posisi yang benar, lalu menerapkan ulang
-                        semua permission VIP & Drifter (Khusus Admin).
-  /structure_preview — Pratinjau rencana pemindahan tanpa mengubah apa pun.
+Semua command dikelompokkan di bawah satu group /structure (lihat
+PERMISSION_ENGINE_REFACTOR.md) supaya tidak ketuker dengan /permission
+milik permissions_cog.py:
+  /structure setup    — Membuat/menata kategori, memindahkan channel ke
+                         kategori & posisi yang benar, lalu menerapkan ulang
+                         semua permission VIP & Drifter (Khusus Admin).
+  /structure preview  — Pratinjau rencana pemindahan tanpa mengubah apa pun.
 
 Cara pakai:
   1. Taruh file ini di folder features/server_admin/ (sejajar dengan permissions_cog.py).
@@ -32,43 +44,29 @@ Cara pakai:
   4. Command ini AMAN dijalankan berkali-kali (idempotent).
 """
 
-import os
 import discord
 import logging
 from typing import Optional
 from discord.ext import commands
 from core.bot import KotabiBot
-from shared.config import get_role_id
 from shared.checks import has_authorized_access
 from features.server_admin.support.permission_table import (
     VIP_CHANNEL_PERMISSIONS,
-    ROLE_KEYS_USED,
     PUBLIC_CHANNELS_FOR_DRIFTER,
+)
+from features.server_admin.support.permission_engine import (
+    get_channel_by_name,
+    apply_vip_channel_permission,
+    apply_drifter_permission,
+    send_paginated,
 )
 
 _log = logging.getLogger(__name__)
 
 
 # ============================================================================
-# HELPER UMUM
+# HELPER KHUSUS STRUKTUR (bukan bagian dari permission_engine.py)
 # ============================================================================
-
-def _get_role(guild: discord.Guild, role_name: str) -> Optional[discord.Role]:
-    """Mengambil objek Role dari guild berdasarkan nama kunci, lewat shared.config (server_map.yml)."""
-    role_id = get_role_id(guild.id, role_name)
-    if not role_id:
-        return None
-    return guild.get_role(role_id)
-
-
-def _get_channel_by_name(guild: discord.Guild, channel_name: str) -> Optional[discord.abc.GuildChannel]:
-    """Mencari channel di guild berdasarkan nama (case-insensitive), tipe apa pun."""
-    name_lower = channel_name.lower()
-    for ch in guild.channels:
-        if ch.name.lower() == name_lower:
-            return ch
-    return None
-
 
 def _find_text_or_voice(guild: discord.Guild, name: str, kind: str) -> Optional[discord.abc.GuildChannel]:
     """Mencari channel case-insensitive berdasarkan nama DAN tipe (text/voice).
@@ -82,89 +80,6 @@ def _find_text_or_voice(guild: discord.Guild, name: str, kind: str) -> Optional[
         if kind == "text" and isinstance(ch, (discord.TextChannel, discord.ForumChannel)):
             return ch
     return None
-
-
-async def _apply_vip_channel_permission(
-    channel: discord.abc.GuildChannel,
-    guild: discord.Guild,
-    everyone: discord.Role,
-    dry_run: bool = False,
-) -> list[str]:
-    channel_name = channel.name.lower()
-    vip_rules = VIP_CHANNEL_PERMISSIONS.get(channel_name)
-
-    if vip_rules is None:
-        return [f"⏭️  `#{channel.name}` — Bukan channel VIP, dilewati"]
-
-    logs = [f"\n**#{channel.name}**"]
-
-    if not dry_run:
-        await channel.set_permissions(everyone, view_channel=False, send_messages=False)
-
-    for role_name, allowed in vip_rules.items():
-        role = _get_role(guild, role_name)
-        if not role:
-            logs.append(f"  ❌ `{role_name}` — Role tidak ditemukan!")
-            continue
-
-        status = "✅ Allow" if allowed else "❌ Deny"
-        logs.append(f"  {status} `{role.name}`")
-
-        if not dry_run:
-            if allowed:
-                await channel.set_permissions(role, view_channel=True, send_messages=True)
-            else:
-                await channel.set_permissions(role, view_channel=False, send_messages=False)
-
-    for staff_key in ("royal_guard", "prime_minister"):
-        staff_role = _get_role(guild, staff_key)
-        if staff_role:
-            logs.append(f"  ✅ Allow `{staff_role.name}` (Staff)")
-            if not dry_run:
-                await channel.set_permissions(staff_role, view_channel=True, send_messages=True)
-
-    return logs
-
-
-async def _apply_drifter_permission(
-    channel: discord.abc.GuildChannel,
-    guild: discord.Guild,
-    dry_run: bool = False,
-) -> str:
-    drifter = _get_role(guild, "drifter")
-    if not drifter:
-        return "  ❌ Role Drifter tidak ditemukan!"
-
-    if not dry_run:
-        await channel.set_permissions(drifter, view_channel=True)
-
-    return f"  ✅ Drifter diberi akses ke `#{channel.name}`"
-
-
-async def _send_paginated(interaction: discord.Interaction, lines: list[str], title: str):
-    """Mengirimkan hasil log yang panjang secara paginated (maks 1900 char per pesan)."""
-    chunk = ""
-    first = True
-    for line in lines:
-        if len(chunk) + len(line) + 1 > 1900:
-            embed = discord.Embed(
-                title=title if first else f"{title} (lanjutan)",
-                description=chunk,
-                color=discord.Color.blurple()
-            )
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            first = False
-            chunk = line + "\n"
-        else:
-            chunk += line + "\n"
-
-    if chunk:
-        embed = discord.Embed(
-            title=title if first else f"{title} (lanjutan)",
-            description=chunk,
-            color=discord.Color.blurple()
-        )
-        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 # ============================================================================
@@ -327,16 +242,24 @@ async def _apply_structure(
     return logs
 
 
-class RestructureServer(commands.Cog):
+class Structure(commands.Cog):
     def __init__(self, bot: KotabiBot):
         self.bot = bot
 
-    @discord.app_commands.command(
-        name="structure_preview",
+    # Dikelompokkan di bawah /structure supaya tidak ketuker dengan
+    # /permission milik permissions_cog.py — dulu nama cog "RestoreServer"
+    # vs "RestructureServer" gampang salah baca.
+    structure_group = discord.app_commands.Group(
+        name="structure",
+        description="Tata ulang kategori & channel server Kotabi sesuai blueprint.",
+        default_permissions=discord.Permissions(administrator=True),
+    )
+
+    @structure_group.command(
+        name="preview",
         description="Pratinjau penataan kategori & channel tanpa mengubah apa pun (Admin)."
     )
     @discord.app_commands.guild_only()
-    @discord.app_commands.default_permissions(administrator=True)
     async def structure_preview(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
@@ -347,14 +270,13 @@ class RestructureServer(commands.Cog):
 
         logs = await _apply_structure(interaction.guild, dry_run=True)
         logs.append("\n_Tidak ada perubahan yang diterapkan. Gunakan `/setup_structure` untuk eksekusi._")
-        await _send_paginated(interaction, logs, "🔍 Pratinjau Penataan Struktur")
+        await send_paginated(interaction, logs, "🔍 Pratinjau Penataan Struktur")
 
-    @discord.app_commands.command(
-        name="setup_structure",
+    @structure_group.command(
+        name="setup",
         description="Tata ulang kategori & channel sesuai blueprint, terapkan ulang permission (Admin)."
     )
     @discord.app_commands.guild_only()
-    @discord.app_commands.default_permissions(administrator=True)
     async def setup_structure(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
@@ -370,12 +292,12 @@ class RestructureServer(commands.Cog):
         everyone = guild.default_role
         logs.append("\n\n## 🔐 Menerapkan Ulang Permission Channel VIP")
         for ch_name in VIP_CHANNEL_PERMISSIONS:
-            channel = _get_channel_by_name(guild, ch_name)
+            channel = get_channel_by_name(guild, ch_name)
             if not channel:
                 logs.append(f"❌ Channel `{ch_name}` tidak ditemukan di server!")
                 continue
             try:
-                result = await _apply_vip_channel_permission(channel, guild, everyone, dry_run=False)
+                result = await apply_vip_channel_permission(channel, guild, everyone, dry_run=False)
                 logs.extend(result)
             except discord.Forbidden:
                 logs.append(f"❌ `#{ch_name}` — Bot tidak punya izin Manage Channels!")
@@ -384,12 +306,12 @@ class RestructureServer(commands.Cog):
 
         logs.append("\n## 🌍 Menerapkan Ulang Permission Channel Publik (Drifter)")
         for ch_name in PUBLIC_CHANNELS_FOR_DRIFTER:
-            channel = _get_channel_by_name(guild, ch_name)
+            channel = get_channel_by_name(guild, ch_name)
             if not channel:
                 logs.append(f"⚠️ `{ch_name}` tidak ditemukan, dilewati")
                 continue
             try:
-                result = await _apply_drifter_permission(channel, guild, dry_run=False)
+                result = await apply_drifter_permission(channel, guild, dry_run=False)
                 logs.append(result)
             except discord.Forbidden:
                 logs.append(f"❌ `#{ch_name}` — Forbidden")
@@ -398,8 +320,8 @@ class RestructureServer(commands.Cog):
 
         logs.append("\n✅ **Penataan struktur server & permission selesai sepenuhnya!**")
         _log.info("Setup struktur server dijalankan oleh %s (%s)", interaction.user, interaction.user.id)
-        await _send_paginated(interaction, logs, "🔧 Hasil Penataan Struktur Server")
+        await send_paginated(interaction, logs, "🔧 Hasil Penataan Struktur Server")
 
 
 async def setup(bot: KotabiBot):
-    await bot.add_cog(RestructureServer(bot))
+    await bot.add_cog(Structure(bot))

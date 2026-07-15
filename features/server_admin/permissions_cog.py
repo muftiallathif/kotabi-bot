@@ -2,11 +2,21 @@
 permissions_cog.py — Sistem Restore & Manajemen Permission Server Kotabi
 Menggantikan setup_permissions.py dengan sistem yang lebih lengkap dan aman.
 
-Commands:
-  /restore              — Restore semua permission dari JSON
-  /restore_channel      — Restore 1 channel saja
-  /preview               — Preview perubahan tanpa apply
-  /backup_permissions   — Simpan kondisi permission sekarang ke file JSON
+Semua command dikelompokkan di bawah satu group /permission (lihat
+PERMISSION_ENGINE_REFACTOR.md) supaya tidak ketuker dengan /structure
+milik structure_cog.py:
+  /permission restore          — Restore semua permission dari tabel
+  /permission restore_channel  — Restore 1 channel saja
+  /permission preview          — Preview perubahan tanpa apply
+  /permission backup           — Simpan kondisi permission sekarang ke file JSON
+  /permission sync_roles       — Validasi semua role ID di konfigurasi restore
+
+CATATAN (fix duplikasi): logic penerapan permission (_apply_vip_channel_permission,
+_apply_drifter_permission, get_role, get_channel_by_name, send_paginated) TIDAK
+lagi didefinisikan di sini — semuanya di-import dari
+features/server_admin/support/permission_engine.py, yang juga dipakai oleh
+structure_cog.py (/setup_structure). Dulu kedua cog ini menyimpan salinan
+identik dari fungsi-fungsi tersebut; sekarang cukup diubah sekali di engine.
 """
 
 import discord
@@ -24,141 +34,45 @@ from features.server_admin.support.permission_table import (
     ROLE_KEYS_USED,
     PUBLIC_CHANNELS_FOR_DRIFTER,
 )
+from features.server_admin.support.permission_engine import (
+    get_role,
+    get_channel_by_name,
+    apply_vip_channel_permission,
+    apply_drifter_permission,
+    send_paginated,
+)
 
 _log = logging.getLogger(__name__)
-
-# ============================================================================
-# FUNGSI PEMBANTU
-# ============================================================================
-
-def _get_role(guild: discord.Guild, role_name: str) -> Optional[discord.Role]:
-    """Mengambil objek Role dari guild berdasarkan nama kunci, lewat shared.config (server_map.yml)."""
-    role_id = get_role_id(guild.id, role_name)
-    if not role_id:
-        return None
-    return guild.get_role(role_id)
-
-
-def _get_channel_by_name(guild: discord.Guild, channel_name: str) -> Optional[discord.abc.GuildChannel]:
-    """Mencari channel di guild berdasarkan nama (case-insensitive)."""
-    name_lower = channel_name.lower()
-    for ch in guild.channels:
-        if ch.name.lower() == name_lower:
-            return ch
-    return None
-
-
-async def _apply_vip_channel_permission(
-    channel: discord.abc.GuildChannel,
-    guild: discord.Guild,
-    everyone: discord.Role,
-    dry_run: bool = False,
-) -> list[str]:
-    """
-    Menerapkan permission VIP pada satu channel.
-    Mengembalikan list log string untuk ditampilkan.
-    """
-    channel_name = channel.name.lower()
-    vip_rules = VIP_CHANNEL_PERMISSIONS.get(channel_name)
-
-    if vip_rules is None:
-        return [f"⏭️  `#{channel.name}` — Bukan channel VIP, dilewati"]
-
-    logs = [f"\n**#{channel.name}**"]
-
-    if not dry_run:
-        # Deny everyone terlebih dahulu
-        await channel.set_permissions(everyone, view_channel=False, send_messages=False)
-
-    for role_name, allowed in vip_rules.items():
-        role = _get_role(guild, role_name)
-        if not role:
-            logs.append(f"  ❌ `{role_name}` — Role tidak ditemukan!")
-            continue
-
-        status = "✅ Allow" if allowed else "❌ Deny"
-        logs.append(f"  {status} `{role.name}`")
-
-        if not dry_run:
-            if allowed:
-                await channel.set_permissions(role, view_channel=True, send_messages=True)
-            else:
-                await channel.set_permissions(role, view_channel=False, send_messages=False)
-
-    # Royal Guard & Prime Minister selalu allow
-    for staff_key in ("royal_guard", "prime_minister"):
-        staff_role = _get_role(guild, staff_key)
-        if staff_role:
-            logs.append(f"  ✅ Allow `{staff_role.name}` (Staff)")
-            if not dry_run:
-                await channel.set_permissions(staff_role, view_channel=True, send_messages=True)
-
-    return logs
-
-
-async def _apply_drifter_permission(
-    channel: discord.abc.GuildChannel,
-    guild: discord.Guild,
-    dry_run: bool = False,
-) -> str:
-    """Memberikan akses view kepada role Drifter pada channel publik."""
-    drifter = _get_role(guild, "drifter")
-    if not drifter:
-        return "  ❌ Role Drifter tidak ditemukan!"
-
-    if not dry_run:
-        await channel.set_permissions(drifter, view_channel=True)
-
-    return f"  ✅ Drifter diberi akses ke `#{channel.name}`"
-
-
-async def _send_paginated(interaction: discord.Interaction, lines: list[str], title: str):
-    """Mengirimkan hasil log yang panjang secara paginated (maks 1900 char per pesan)."""
-    chunk = ""
-    first = True
-    for line in lines:
-        if len(chunk) + len(line) + 1 > 1900:
-            embed = discord.Embed(
-                title=title if first else f"{title} (lanjutan)",
-                description=chunk,
-                color=discord.Color.blurple()
-            )
-            if first:
-                await interaction.followup.send(embed=embed, ephemeral=True)
-                first = False
-            else:
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            chunk = line + "\n"
-        else:
-            chunk += line + "\n"
-
-    if chunk:
-        embed = discord.Embed(
-            title=title if first else f"{title} (lanjutan)",
-            description=chunk,
-            color=discord.Color.blurple()
-        )
-        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 # ============================================================================
 # COG UTAMA
 # ============================================================================
 
-class RestoreServer(commands.Cog):
+class Permissions(commands.Cog):
     def __init__(self, bot: KotabiBot):
         self.bot = bot
 
+    # Semua command permission dikelompokkan di bawah /permission, supaya
+    # tidak ketuker dengan /structure (structure_cog.py) — dulu nama cog
+    # "RestoreServer" vs "RestructureServer" gampang salah baca, dan
+    # command /restore vs /setup_structure / /preview vs /structure_preview
+    # tidak konsisten.
+    permission_group = discord.app_commands.Group(
+        name="permission",
+        description="Kelola permission channel VIP & Drifter server Kotabi.",
+        default_permissions=discord.Permissions(administrator=True),
+    )
+
     # ------------------------------------------------------------------ #
-    #  /restore — Restore semua permission VIP + Drifter sekaligus        #
+    #  /permission restore — Restore semua permission VIP + Drifter       #
     # ------------------------------------------------------------------ #
 
-    @discord.app_commands.command(
+    @permission_group.command(
         name="restore",
         description="Restore semua permission channel VIP dan publik sesuai tabel yang sudah ditentukan (Khusus Admin)."
     )
     @discord.app_commands.guild_only()
-    @discord.app_commands.default_permissions(administrator=True)
     async def restore(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
@@ -172,12 +86,12 @@ class RestoreServer(commands.Cog):
         # 1. Restore channel VIP
         logs.append("## 🔐 Channel VIP")
         for ch_name in VIP_CHANNEL_PERMISSIONS:
-            channel = _get_channel_by_name(guild, ch_name)
+            channel = get_channel_by_name(guild, ch_name)
             if not channel:
                 logs.append(f"❌ Channel `{ch_name}` tidak ditemukan di server!")
                 continue
             try:
-                result = await _apply_vip_channel_permission(channel, guild, everyone, dry_run=False)
+                result = await apply_vip_channel_permission(channel, guild, everyone, dry_run=False)
                 logs.extend(result)
             except discord.Forbidden:
                 logs.append(f"❌ `#{ch_name}` — Bot tidak punya izin Manage Channels!")
@@ -187,12 +101,12 @@ class RestoreServer(commands.Cog):
         # 2. Restore Drifter di channel publik
         logs.append("\n## 🌍 Channel Publik (Drifter)")
         for ch_name in PUBLIC_CHANNELS_FOR_DRIFTER:
-            channel = _get_channel_by_name(guild, ch_name)
+            channel = get_channel_by_name(guild, ch_name)
             if not channel:
                 logs.append(f"⚠️ `{ch_name}` tidak ditemukan, dilewati")
                 continue
             try:
-                result = await _apply_drifter_permission(channel, guild, dry_run=False)
+                result = await apply_drifter_permission(channel, guild, dry_run=False)
                 logs.append(result)
             except discord.Forbidden:
                 logs.append(f"❌ `#{ch_name}` — Forbidden")
@@ -201,19 +115,18 @@ class RestoreServer(commands.Cog):
 
         logs.append("\n✅ **Restore selesai!**")
         _log.info("Restore permission dijalankan oleh %s (%s)", interaction.user, interaction.user.id)
-        await _send_paginated(interaction, logs, "📋 Hasil Restore Permission")
+        await send_paginated(interaction, logs, "📋 Hasil Restore Permission")
 
     # ------------------------------------------------------------------ #
     #  /restore_channel — Restore 1 channel saja                          #
     # ------------------------------------------------------------------ #
 
-    @discord.app_commands.command(
+    @permission_group.command(
         name="restore_channel",
         description="Restore permission satu channel tertentu saja (Khusus Admin)."
     )
     @discord.app_commands.describe(channel="Pilih channel yang ingin di-restore permissionnya.")
     @discord.app_commands.guild_only()
-    @discord.app_commands.default_permissions(administrator=True)
     async def restore_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         await interaction.response.defer(ephemeral=True)
 
@@ -227,7 +140,7 @@ class RestoreServer(commands.Cog):
         # Cek apakah ini channel VIP
         if ch_name in VIP_CHANNEL_PERMISSIONS:
             try:
-                logs = await _apply_vip_channel_permission(channel, guild, everyone, dry_run=False)
+                logs = await apply_vip_channel_permission(channel, guild, everyone, dry_run=False)
                 embed = discord.Embed(
                     title=f"✅ Restore #{channel.name}",
                     description="\n".join(logs),
@@ -242,7 +155,7 @@ class RestoreServer(commands.Cog):
         # Cek apakah ini channel publik Drifter
         elif channel.name in PUBLIC_CHANNELS_FOR_DRIFTER:
             try:
-                result = await _apply_drifter_permission(channel, guild, dry_run=False)
+                result = await apply_drifter_permission(channel, guild, dry_run=False)
                 embed = discord.Embed(
                     title=f"✅ Restore #{channel.name}",
                     description=result,
@@ -265,13 +178,12 @@ class RestoreServer(commands.Cog):
     #  /preview — Lihat rencana perubahan tanpa apply                     #
     # ------------------------------------------------------------------ #
 
-    @discord.app_commands.command(
+    @permission_group.command(
         name="preview",
         description="Lihat preview permission yang akan diterapkan tanpa mengubah apa pun (Khusus Admin)."
     )
     @discord.app_commands.describe(channel="Opsional: preview untuk channel tertentu saja.")
     @discord.app_commands.guild_only()
-    @discord.app_commands.default_permissions(administrator=True)
     async def preview(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
         await interaction.response.defer(ephemeral=True)
 
@@ -286,10 +198,10 @@ class RestoreServer(commands.Cog):
             # Preview untuk 1 channel
             ch_name = channel.name.lower()
             if ch_name in VIP_CHANNEL_PERMISSIONS:
-                result = await _apply_vip_channel_permission(channel, guild, everyone, dry_run=True)
+                result = await apply_vip_channel_permission(channel, guild, everyone, dry_run=True)
                 logs.extend(result)
             elif channel.name in PUBLIC_CHANNELS_FOR_DRIFTER:
-                result = await _apply_drifter_permission(channel, guild, dry_run=True)
+                result = await apply_drifter_permission(channel, guild, dry_run=True)
                 logs.append(result)
             else:
                 logs.append(f"⚠️ `#{channel.name}` tidak terdaftar di sistem restore.")
@@ -297,37 +209,36 @@ class RestoreServer(commands.Cog):
             # Preview semua
             logs.append("## 🔐 Channel VIP")
             for ch_name in VIP_CHANNEL_PERMISSIONS:
-                ch = _get_channel_by_name(guild, ch_name)
+                ch = get_channel_by_name(guild, ch_name)
                 if not ch:
                     logs.append(f"❌ `{ch_name}` — tidak ditemukan di server")
                     continue
-                result = await _apply_vip_channel_permission(ch, guild, everyone, dry_run=True)
+                result = await apply_vip_channel_permission(ch, guild, everyone, dry_run=True)
                 logs.extend(result)
 
             logs.append("\n## 🌍 Channel Publik (Drifter)")
             for ch_name in PUBLIC_CHANNELS_FOR_DRIFTER:
-                ch = _get_channel_by_name(guild, ch_name)
+                ch = get_channel_by_name(guild, ch_name)
                 if not ch:
                     logs.append(f"⚠️ `{ch_name}` — tidak ditemukan")
                     continue
-                result = await _apply_drifter_permission(ch, guild, dry_run=True)
+                result = await apply_drifter_permission(ch, guild, dry_run=True)
                 logs.append(result)
 
             logs.append("\n_Tidak ada perubahan yang diterapkan. Gunakan `/restore` untuk apply._")
 
-        await _send_paginated(interaction, logs, "🔍 Preview Permission")
+        await send_paginated(interaction, logs, "🔍 Preview Permission")
 
     # ------------------------------------------------------------------ #
     #  /backup_permissions — Export kondisi permission sekarang ke JSON   #
     # ------------------------------------------------------------------ #
 
-    @discord.app_commands.command(
-        name="backup_permissions",
+    @permission_group.command(
+        name="backup",
         description="Export kondisi permission semua channel saat ini ke file JSON (Khusus Admin)."
     )
     @discord.app_commands.guild_only()
-    @discord.app_commands.default_permissions(administrator=True)
-    async def backup_permissions(self, interaction: discord.Interaction):
+    async def backup(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
         if not has_authorized_access(interaction.user):
@@ -382,12 +293,11 @@ class RestoreServer(commands.Cog):
     #  /sync_roles — Validasi semua role ID di konfigurasi                #
     # ------------------------------------------------------------------ #
 
-    @discord.app_commands.command(
+    @permission_group.command(
         name="sync_roles",
         description="Validasi apakah semua role ID di konfigurasi restore masih valid (Khusus Admin)."
     )
     @discord.app_commands.guild_only()
-    @discord.app_commands.default_permissions(administrator=True)
     async def sync_roles(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
@@ -409,7 +319,7 @@ class RestoreServer(commands.Cog):
 
         lines.append("\n## Channel VIP")
         for ch_name in VIP_CHANNEL_PERMISSIONS:
-            ch = _get_channel_by_name(guild, ch_name)
+            ch = get_channel_by_name(guild, ch_name)
             if ch:
                 lines.append(f"✅ `#{ch_name}` ditemukan")
             else:
@@ -434,4 +344,4 @@ class RestoreServer(commands.Cog):
 # ============================================================================
 
 async def setup(bot: KotabiBot):
-    await bot.add_cog(RestoreServer(bot))
+    await bot.add_cog(Permissions(bot))
