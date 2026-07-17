@@ -344,8 +344,10 @@ def _render_radikal_ringkas(entry: dict) -> Optional[str]:
     radikal_kanken = entry.get("radikal_kanken")
     info = _load_object(entry.get("radikal_info_kanken"))
     radikal_kanjivg = _load_list(entry.get("radikal_kanjivg"))
+    posisi_kiri_kanan = _load_list(entry.get("radikal_posisi_kiri_kanan"))
+    posisi_atas_bawah = _load_list(entry.get("radikal_posisi_atas_bawah"))
 
-    if not _has_content(radikal_kanken) and not info:
+    if not _has_content(radikal_kanken) and not info and not radikal_kanjivg:
         return None
 
     lines = []
@@ -372,10 +374,29 @@ def _render_radikal_ringkas(entry: dict) -> Optional[str]:
         if detail_parts:
             lines.append(", ".join(detail_parts))
 
-    # radikal_kanjivg hanya ditampilkan kalau beda dari radikal_kanken
-    # (metodologi KanjiVG vs Kanken bisa beda — §9).
-    if radikal_kanjivg and radikal_kanjivg != [radikal_kanken]:
-        lines.append(f"_KanjiVG:_ {'、'.join(radikal_kanjivg)}")
+    # radikal_kanjivg BUKAN "kandidat radikal alternatif" yang setara dan
+    # bisa dibandingkan langsung ke radikal_kanken — radikal_kanken mewakili
+    # SATU radikal (metodologi Kanken, 214 bushu), sedangkan radikal_kanjivg
+    # adalah representasi KOMPOSISI/POHON kanji menurut metodologi KanjiVG
+    # (bisa berisi >1 komponen, bahkan duplikat kalau komponen yang sama
+    # muncul berkali-kali di posisi berbeda pada pohon — mis. 三 = 一+一+一).
+    # Karena itu ditampilkan APA ADANYA di sini (dedupe untuk keterbacaan,
+    # tapi catat jumlah kemunculan asli kalau ada duplikat), TIDAK
+    # dibandingkan/digating terhadap radikal_kanken.
+    if radikal_kanjivg:
+        deduped = list(dict.fromkeys(radikal_kanjivg))
+        text = "、".join(deduped)
+        if len(deduped) != len(radikal_kanjivg):
+            text += f" ({len(radikal_kanjivg)}x kemunculan di pohon)"
+        lines.append(f"_Komposisi (KanjiVG):_ {text}")
+
+    posisi_notes = []
+    if posisi_kiri_kanan:
+        posisi_notes.append(f"kiri-kanan: {'、'.join(posisi_kiri_kanan)}")
+    if posisi_atas_bawah:
+        posisi_notes.append(f"atas-bawah: {'、'.join(posisi_atas_bawah)}")
+    if posisi_notes:
+        lines.append(f"_Posisi:_ {'; '.join(posisi_notes)}")
 
     return "\n".join(lines) if lines else None
 
@@ -775,6 +796,15 @@ class Kanji(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
+        # Migration guard: kalau ada tabel peninggalan percobaan load
+        # sebelumnya dengan skema berbeda (mis. kolom belum lengkap),
+        # `CREATE TABLE IF NOT EXISTS` TIDAK akan menimpanya, dan
+        # CREATE_INDEXES di bawah bisa gagal dengan "no such column".
+        # Drop dulu supaya aman — datanya toh selalu di-full-replace dari
+        # CSV di load_csv() setelah ini, jadi tidak ada data yang hilang.
+        await self.bot.RUN(f"DROP TABLE IF EXISTS {TABLE_NAME};")
+        await self.bot.RUN(f"DROP TABLE IF EXISTS {MEANINGS_TABLE};")
+
         await self.bot.RUN(CREATE_TABLE)
         await self.bot.RUN(CREATE_MEANINGS_TABLE)
         for index_query in CREATE_INDEXES:
