@@ -5,6 +5,10 @@ Dulu ada 3 channel teks terpisah (quiz-public-1/2/3) untuk kuis biasa,
 latihan, dan duel santai (bukan untuk naik kasta — itu tugas quiz-rank-up).
 Sekarang digabung jadi SATU Forum Channel: satu thread = satu sesi kuis.
 
+CATATAN v2 (lihat PERMISSION_MATRIX.md bagian 12b): channel forum ini
+di-rename dari "quiz-public-forum" jadi "quiz-public" — key server_map.yml
+ikut berubah dari "quiz_public_forum" jadi "quiz_public".
+
 Cog ini menjaga forum supaya tidak dipenuhi thread basi:
   - Thread yang tidak ada aktivitas baru selama QUIZ_THREAD_INACTIVE_DAYS
     hari akan di-archive otomatis (bukan dihapus — histori tetap ada,
@@ -57,7 +61,9 @@ class QuizForumCleanup(commands.Cog):
         self.cleanup_quiz_forum.cancel()
 
     def _get_forum(self, guild: discord.Guild) -> discord.ForumChannel | None:
-        forum_id = get_channel_id(guild.id, "quiz_public_forum")
+        # v2: key server_map.yml direname dari "quiz_public_forum" jadi
+        # "quiz_public" mengikuti rename channel Discord-nya.
+        forum_id = get_channel_id(guild.id, "quiz_public")
         if not forum_id:
             return None
         channel = guild.get_channel(forum_id)

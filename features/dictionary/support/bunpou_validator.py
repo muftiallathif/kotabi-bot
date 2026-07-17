@@ -13,7 +13,7 @@ ditaruh di features/dictionary/support/ sesuai konvensi penamaan project
 
 CARA PAKAI (CLI, sebelum commit CSV baru):
     python3 features/dictionary/support/grammar_validator.py \
-        features/dictionary/grammar-notes-master.csv
+        features/dictionary/bunpou-notes-master.csv
 
 Keluar dengan exit code 1 kalau ada ERROR (bukan cuma WARNING), supaya bisa
 dipasang di pre-push check (lihat DEVELOPMENT_GUIDE.md §7).
@@ -302,7 +302,7 @@ def validate_csv_file(path: str) -> tuple[list[Issue], list[Issue]]:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print("Pemakaian: python3 grammar_validator.py <path-ke-grammar-notes-master.csv>")
+        print("Pemakaian: python3 grammar_validator.py <path-ke-bunpou-notes-master.csv>")
         return 2
 
     errors, warnings = validate_csv_file(argv[1])

@@ -19,7 +19,9 @@ channels:
   bot_commands: 1516670400090607657
 
   # --- JAPANESE AREA ---
-  homework_help: 1517365651759562782
+  # "homework_help" (channel teks lama, 1517365651759562782) sudah dihapus
+  # dan digantikan oleh ForumChannel baru "questions_forum".
+  questions_forum: 1527241425488707634
   jlpt_study_group: 1403184188148027507
   immersion_log: 1516671526345113671
 
@@ -41,11 +43,15 @@ channels:
 
   # --- QUIZ HALL ---
   quiz_rank_up: 1517023518984896564
-  quiz_public_forum: 1522435952776183949
+  # "quiz_public_forum" di-rename jadi "quiz_public" (ID tetap sama, channel
+  # Discord-nya juga di-rename dari "quiz-public-forum" jadi "quiz-public").
+  quiz_public: 1522435952776183949
 
   # --- VOICE HALL ---
   lounge: 1403184188496019599
   join_to_create: 1522436521855287386
+  # BARU — voice privat khusus staff (Royal Guard/Prime Minister).
+  staff_voice: 1527247030680817694
 
   # --- RESOURCES SHARING ---
   notes_and_resources: 1403184188148027504

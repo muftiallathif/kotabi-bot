@@ -15,6 +15,27 @@ Tidak butuh tabel database — daftar channel yang sedang "hidup" cukup
 disimpan in-memory (self._created_channels), karena kalau bot restart di
 tengah jalan dan channel voice tsb kebetulan sudah kosong, on_ready akan
 menyapu bersih sisa channel kosong yang masih tertinggal.
+
+--------------------------------------------------------------------------
+KONTROL PEMILIK ROOM (v2 — "Opsi A", lihat PERMISSION_MATRIX.md bagian 10)
+--------------------------------------------------------------------------
+Begitu room baru dibuat untuk seseorang, bot langsung memberi overwrite
+permission PERSONAL (bukan role-wide) `manage_channels=True` +
+`move_members=True` KHUSUS untuk channel itu dan KHUSUS untuk member itu.
+Efeknya: pemilik room bisa klik kanan channel-nya di Discord (native UI,
+"Edit Channel") lalu ganti nama atau atur User Limit sendiri, tanpa perlu
+command bot sama sekali.
+
+Kenapa Opsi A (bukan slash command `/voice rename`/`/voice limit`):
+- Lebih simpel — tidak perlu bikin command/validasi baru.
+- Pengalamannya lebih natural — user Discord sudah terbiasa klik kanan
+  channel untuk edit, tidak perlu belajar command baru.
+- Overwrite otomatis hilang begitu channel dihapus (saat kosong) — tidak
+  perlu cleanup manual.
+
+`self._room_owners` (channel_id -> owner_id) di sini HANYA dipakai untuk
+keperluan logging/debug, BUKAN untuk otorisasi — otorisasi sepenuhnya
+diwakili oleh permission overwrite Discord itu sendiri.
 """
 
 import logging
@@ -35,6 +56,8 @@ class VoiceJoinToCreate(commands.Cog):
         self.bot = bot
         # channel_id voice yang dibuat otomatis oleh cog ini, per guild
         self._created_channels: set[int] = set()
+        # channel_id -> owner_id, murni untuk logging (lihat catatan modul di atas)
+        self._room_owners: dict[int, int] = {}
 
     def _get_trigger_channel_id(self, guild_id: int) -> int:
         return get_channel_id(guild_id, "join_to_create")
@@ -73,6 +96,7 @@ class VoiceJoinToCreate(commands.Cog):
                     pass
                 finally:
                     self._created_channels.discard(before.channel.id)
+                    self._room_owners.pop(before.channel.id, None)
 
     async def _create_room_for(self, member: discord.Member, trigger_channel: discord.VoiceChannel):
         guild = member.guild
@@ -85,8 +109,30 @@ class VoiceJoinToCreate(commands.Cog):
                 reason=f"Join-to-Create oleh {member} ({member.id})",
             )
             self._created_channels.add(new_channel.id)
+            self._room_owners[new_channel.id] = member.id
+
+            # Opsi A: beri pemilik izin Manage Channels + Move Members
+            # KHUSUS untuk channel ini saja (bukan role-wide), supaya
+            # mereka bisa klik kanan channel-nya di Discord -> Edit
+            # Channel -> ganti nama atau atur User Limit, tanpa perlu
+            # command bot sama sekali. Overwrite ini otomatis hilang
+            # begitu channel dihapus (saat kosong).
+            try:
+                await new_channel.set_permissions(
+                    member,
+                    manage_channels=True,
+                    move_members=True,
+                    reason="Pemilik room Join-to-Create — kontrol rename & user limit",
+                )
+            except discord.Forbidden:
+                _log.warning(
+                    "Tidak bisa memberi izin Manage Channels ke pemilik room %s (%s) — "
+                    "bot mungkin kekurangan izin Manage Roles/Permissions.",
+                    new_channel.name, member.id
+                )
+
             await member.move_to(new_channel, reason="Dipindahkan ke room Join-to-Create baru")
-            _log.info("Room JTC baru dibuat untuk %s: %s", member, room_name)
+            _log.info("Room JTC baru dibuat untuk %s: %s (pemilik: %s)", member, room_name, member.id)
         except discord.Forbidden:
             _log.warning("Tidak punya izin membuat/memindahkan voice channel untuk %s", member)
         except discord.HTTPException as e:

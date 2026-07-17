@@ -1,46 +1,48 @@
 """
-features/server_admin/support/permission_engine.py — Engine Penerapan Permission Bersama
-============================================================================================
-Sebelumnya, logic penerapan permission (_apply_vip_channel_permission,
-_apply_drifter_permission, _get_role, _get_channel_by_name, _send_paginated)
-ter-duplikasi PERSIS SAMA di dua tempat:
-  - features/server_admin/permissions_cog.py  (/restore, /preview, dst)
-  - features/server_admin/structure_cog.py    (/setup_structure, tahap akhir)
+features/server_admin/support/permission_engine.py — Engine Penerapan Permission Bersama (v2)
+==================================================================================================
+GENERASI KEDUA — bekerja dengan skema CHANNEL_PERMISSIONS baru (lihat
+PERMISSION_MATRIX.md): setiap channel punya {role_key: {permission_kwarg: bool}},
+bukan {role_key: bool} seperti versi v1.
 
-Sekarang keduanya import dari sini. Kalau mau ubah aturan permission (mis.
-tambah role VIP baru, ubah default deny/allow), cukup edit SEKALI di file ini.
+Perubahan dari v1:
+- apply_channel_permission() menggantikan apply_vip_channel_permission() +
+  apply_drifter_permission() — sekarang SATU fungsi menangani channel VIP
+  MAUPUN channel publik, karena role_key "everyone" bisa langsung
+  didefinisikan per channel di CHANNEL_PERMISSIONS (tidak perlu lagi
+  daftar terpisah PUBLIC_CHANNELS_FOR_DRIFTER).
+- kwargs permission diteruskan generic ke discord.PermissionOverwrite,
+  jadi menambah permission baru (mis. attach_files) di permission_table.py
+  TIDAK perlu ubah kode di sini sama sekali.
 
-PENTING — file ini TIDAK berisi logic struktur kategori/posisi channel.
-STRUCTURE_BLUEPRINT, _apply_structure(), _get_or_create_category(), dan
-_find_text_or_voice() TETAP tinggal di structure_cog.py, karena itu yang
-membedakan /setup_structure (struktur + permission) dari /restore
-(permission saja). Lihat DEVELOPMENT_GUIDE.md jawaban Q2.
-
-Penggunaan:
-    from features.server_admin.support.permission_engine import (
-        get_role, get_channel_by_name,
-        apply_vip_channel_permission, apply_drifter_permission,
-        send_paginated,
-    )
+Dipakai oleh permissions_cog.py (/permission restore|preview|sync_roles)
+dan structure_cog.py (/structure setup, tahap penerapan permission).
 """
 
 import discord
 from typing import Optional
 
 from shared.config import get_role_id
-from features.server_admin.support.permission_table import VIP_CHANNEL_PERMISSIONS
+from features.server_admin.support.permission_table import CHANNEL_PERMISSIONS
 
 
-def get_role(guild: discord.Guild, role_name: str) -> Optional[discord.Role]:
-    """Mengambil objek Role dari guild berdasarkan nama kunci, lewat shared.config (server_map.yml)."""
-    role_id = get_role_id(guild.id, role_name)
+def get_role(guild: discord.Guild, role_key: str) -> Optional[discord.Role]:
+    """
+    Mengambil objek Role dari guild berdasarkan role_key.
+    "everyone" adalah kata kunci khusus -> guild.default_role.
+    Role lain di-resolve lewat shared.config.get_role_id() (server_map.yml).
+    """
+    if role_key == "everyone":
+        return guild.default_role
+    role_id = get_role_id(guild.id, role_key)
     if not role_id:
         return None
     return guild.get_role(role_id)
 
 
 def get_channel_by_name(guild: discord.Guild, channel_name: str) -> Optional[discord.abc.GuildChannel]:
-    """Mencari channel di guild berdasarkan nama (case-insensitive), tipe apa pun."""
+    """Mencari channel di guild berdasarkan nama (case-insensitive), tipe apa pun
+    (text, voice, forum, dst)."""
     name_lower = channel_name.lower()
     for ch in guild.channels:
         if ch.name.lower() == name_lower:
@@ -48,68 +50,49 @@ def get_channel_by_name(guild: discord.Guild, channel_name: str) -> Optional[dis
     return None
 
 
-async def apply_vip_channel_permission(
+async def apply_channel_permission(
     channel: discord.abc.GuildChannel,
     guild: discord.Guild,
-    everyone: discord.Role,
     dry_run: bool = False,
 ) -> list[str]:
     """
-    Menerapkan permission VIP pada satu channel sesuai VIP_CHANNEL_PERMISSIONS.
+    Menerapkan seluruh rule permission untuk satu channel sesuai
+    CHANNEL_PERMISSIONS. Menggantikan apply_vip_channel_permission() +
+    apply_drifter_permission() dari versi v1 — satu fungsi untuk semua
+    jenis channel (VIP-gated maupun publik, text/voice/forum).
+
     Mengembalikan list log string untuk ditampilkan ke admin.
     """
-    channel_name = channel.name.lower()
-    vip_rules = VIP_CHANNEL_PERMISSIONS.get(channel_name)
+    channel_key = channel.name.lower()
+    rules = CHANNEL_PERMISSIONS.get(channel_key)
 
-    if vip_rules is None:
-        return [f"⏭️  `#{channel.name}` — Bukan channel VIP, dilewati"]
+    if rules is None:
+        return [f"⏭️  `#{channel.name}` — Tidak ada di CHANNEL_PERMISSIONS, dilewati (warisan permission kategori)"]
 
     logs = [f"\n**#{channel.name}**"]
 
-    if not dry_run:
-        # Deny everyone terlebih dahulu
-        await channel.set_permissions(everyone, view_channel=False, send_messages=False)
-
-    for role_name, allowed in vip_rules.items():
-        role = get_role(guild, role_name)
+    for role_key, perm_kwargs in rules.items():
+        role = get_role(guild, role_key)
         if not role:
-            logs.append(f"  ❌ `{role_name}` — Role tidak ditemukan!")
+            logs.append(f"  ❌ `{role_key}` — Role tidak ditemukan!")
             continue
 
-        status = "✅ Allow" if allowed else "❌ Deny"
-        logs.append(f"  {status} `{role.name}`")
+        summary = ", ".join(f"{k}={'✅' if v else '❌'}" for k, v in perm_kwargs.items())
+        logs.append(f"  🔧 `{role.name}` — {summary}")
 
         if not dry_run:
-            if allowed:
-                await channel.set_permissions(role, view_channel=True, send_messages=True)
-            else:
-                await channel.set_permissions(role, view_channel=False, send_messages=False)
-
-    # Royal Guard & Prime Minister selalu allow
-    for staff_key in ("royal_guard", "prime_minister"):
-        staff_role = get_role(guild, staff_key)
-        if staff_role:
-            logs.append(f"  ✅ Allow `{staff_role.name}` (Staff)")
-            if not dry_run:
-                await channel.set_permissions(staff_role, view_channel=True, send_messages=True)
+            try:
+                overwrite = discord.PermissionOverwrite(**perm_kwargs)
+                await channel.set_permissions(role, overwrite=overwrite)
+            except TypeError as e:
+                # Typo nama kwarg (tidak cocok dengan atribut discord.PermissionOverwrite)
+                logs.append(f"    ⚠️ Nama permission tidak dikenal discord.py untuk `{role.name}`: {e}")
+            except discord.Forbidden:
+                logs.append(f"    ⚠️ Bot tidak punya izin mengubah permission `{role.name}` di channel ini")
+            except discord.HTTPException as e:
+                logs.append(f"    ⚠️ Gagal menerapkan ke `{role.name}`: {e}")
 
     return logs
-
-
-async def apply_drifter_permission(
-    channel: discord.abc.GuildChannel,
-    guild: discord.Guild,
-    dry_run: bool = False,
-) -> str:
-    """Memberikan akses view kepada role Drifter pada channel publik."""
-    drifter = get_role(guild, "drifter")
-    if not drifter:
-        return "  ❌ Role Drifter tidak ditemukan!"
-
-    if not dry_run:
-        await channel.set_permissions(drifter, view_channel=True)
-
-    return f"  ✅ Drifter diberi akses ke `#{channel.name}`"
 
 
 async def send_paginated(interaction: discord.Interaction, lines: list[str], title: str):

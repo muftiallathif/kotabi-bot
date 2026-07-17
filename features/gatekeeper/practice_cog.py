@@ -19,7 +19,7 @@ tidak perlu menangani cleanup sendiri.
 
 Command:
   /create_practice_menu — Buat POST BARU berisi tombol "🎮 Mulai Latihan"
-                           di dalam forum quiz-public-forum (Khusus Admin).
+                           di dalam forum quiz-public (Khusus Admin).
 
     PENTING (fix dari versi sebelumnya): Forum Channel TIDAK punya kotak
     ketik biasa di level channel-nya sendiri — hanya post/thread di
@@ -29,6 +29,11 @@ Command:
     terprogram — bukan mengandalkan interaction.response.send_message()
     yang butuh channel dengan kotak ketik biasa (yang tidak dimiliki
     Forum Channel di level root-nya).
+
+CATATAN v2 (lihat PERMISSION_MATRIX.md): channel forum ini di-rename dari
+"quiz-public-forum" jadi "quiz-public" — key server_map.yml ikut berubah
+dari "quiz_public_forum" jadi "quiz_public" (lihat baris get_channel_id
+di bawah).
 
 Cara pakai:
   1. Taruh file ini di features/gatekeeper/practice_cog.py
@@ -217,13 +222,16 @@ class PracticeThreads(commands.Cog):
         """
         await interaction.response.defer(ephemeral=True)
 
-        forum_id = get_channel_id(interaction.guild_id, "quiz_public_forum")
+        # v2: key server_map.yml direname dari "quiz_public_forum" jadi
+        # "quiz_public" mengikuti rename channel Discord-nya (lihat
+        # PERMISSION_MATRIX.md bagian 12b).
+        forum_id = get_channel_id(interaction.guild_id, "quiz_public")
         forum = interaction.guild.get_channel(forum_id) if forum_id else None
 
         if not isinstance(forum, discord.ForumChannel):
             return await interaction.followup.send(
-                "❌ Channel `quiz_public_forum` tidak ditemukan atau bukan Forum Channel. "
-                "Cek key `quiz_public_forum` di shared/server_map.yml.",
+                "❌ Channel `quiz_public` tidak ditemukan atau bukan Forum Channel. "
+                "Cek key `quiz_public` di shared/server_map.yml.",
                 ephemeral=True,
             )
 
