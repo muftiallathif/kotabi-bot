@@ -70,6 +70,7 @@ import csv
 import json
 import logging
 import os
+import unicodedata
 from typing import Optional
 
 import discord
@@ -279,7 +280,9 @@ def _render_radikal(entry: dict) -> Optional[str]:
 
     lines = []
     if _has_content(radikal_kanken):
-        line = f"**Radikal (Kanken)**: {radikal_kanken}"
+        # Ditulis mengalir sebagai kalimat, bukan label kaku "Radikal (Kanken):"
+        # -- header field-nya sendiri sudah bilang ini bagian radikal (部首).
+        line = radikal_kanken
         if info:
             detail_parts = []
             if info.get("cara_baca_jp"):
@@ -293,10 +296,12 @@ def _render_radikal(entry: dict) -> Optional[str]:
         lines.append(line)
 
     # radikal_kanjivg BUKAN radikal tunggal alternatif -- daftar beberapa
-    # elemen struktural versi KanjiVG, ditampilkan terpisah (lihat catatan
-    # penting di kanji_fields.py, jangan disamakan dengan radikal_kanken).
-    if radikal_kanjivg:
-        lines.append(f"**Elemen KanjiVG**: {'、'.join(radikal_kanjivg)}")
+    # elemen struktural versi KanjiVG, ditampilkan sebagai catatan tambahan
+    # bergaya italic (bukan label bold sejajar) supaya tidak terkesan
+    # setara dengan radikal Kanken di atasnya. Hanya tampil kalau BEDA dari
+    # radikal_kanken (lihat catatan penting di kanji_fields.py).
+    if radikal_kanjivg and radikal_kanjivg != [radikal_kanken]:
+        lines.append(f"*(KanjiVG: {'、'.join(radikal_kanjivg)})*")
 
     return "\n".join(lines) if lines else None
 
@@ -334,72 +339,131 @@ def _render_jukugo(entry: dict) -> Optional[str]:
 
 MAX_TREE_DEPTH_GUARD = 20   # defensive, data asli max cuma 10 -- lihat kanji_fields.py
 MAX_TREE_NODE_GUARD = 80    # defensive, data asli max cuma 23 node
+MAX_MEANING_DISPLAY_LEN = 45  # potong arti Inggris per node -- worst case di data
+                               # asli 1 arti tunggal bisa 107 char (䌂), tanpa batas
+                               # ini bisa bikin baris meledak walau kolom sudah dipisah.
+TREE_COLUMN_GAP = 2  # jarak spasi antara kolom 1 (pohon) dan kolom 2 (bacaan/arti)
 
 
-def _format_tree_node_label(char: Optional[str], reading_lookup: dict) -> str:
+def _display_width(s: str) -> int:
+    """Lebar tampil di font monospace -- karakter fullwidth/wide (kanji, kana,
+    tanda baca CJK) dihitung 2 kolom, sisanya (Latin, digit, simbol ASCII)
+    dihitung 1 kolom. WAJIB dipakai buat perataan kolom, bukan len() biasa --
+    kalau pakai len() doang, baris yang isinya kanji bakal keitung lebih
+    pendek dari lebar tampil aslinya dan kolom 2 jadi nggak rata."""
+    width = 0
+    for ch in s:
+        eaw = unicodedata.east_asian_width(ch)
+        width += 2 if eaw in ("W", "F") else 1
+    return width
+
+
+def _pad_to_width(s: str, target_width: int) -> str:
+    return s + " " * max(0, target_width - _display_width(s))
+
+
+def _node_col2_lines(char: Optional[str], reading_lookup: dict) -> tuple[str, str]:
+    """Return (baris_bacaan, baris_arti) untuk 1 node. Cuma ambil 1 on'yomi +
+    1 kun'yomi + 1 arti (bukan 2 seperti versi awal) -- lebih ringkas &
+    prediktif panjangnya sekarang kolom 2 sudah py baris sendiri (nggak
+    numpang di baris yang sama dengan pohon)."""
     if not char:
-        return "？"
+        return "", ""
     info = reading_lookup.get(char)
-    parts = [char]
-    if info:
-        on_yomi, kun_yomi, meanings = info
-        if on_yomi:
-            parts.append("・".join(on_yomi[:2]))
-        if kun_yomi:
-            parts.append("・".join(kun_yomi[:2]))
-        if meanings:
-            parts.append(", ".join(meanings[:2]))
-    return "  ".join(parts)
+    if not info:
+        return "", ""
+    on_yomi, kun_yomi, meanings = info
+    reading_parts = []
+    if on_yomi:
+        reading_parts.append(on_yomi[0])
+    if kun_yomi:
+        reading_parts.append(kun_yomi[0])
+    reading_line = "  ".join(reading_parts)
+
+    meaning_line = ""
+    if meanings:
+        meaning_line = meanings[0]
+        if len(meaning_line) > MAX_MEANING_DISPLAY_LEN:
+            meaning_line = meaning_line[: MAX_MEANING_DISPLAY_LEN - 1].rstrip() + "…"
+
+    return reading_line, meaning_line
 
 
-def _render_tree_lines(
-    node: dict, reading_lookup: dict, prefix: str = "", is_last: bool = True,
-    is_root: bool = True, depth: int = 0, lines: Optional[list] = None,
-    node_count: Optional[list] = None,
+def _collect_tree_col1(
+    node: dict, prefix: str = "", is_last: bool = True, is_root: bool = True,
+    depth: int = 0, out: Optional[list] = None, node_count: Optional[list] = None,
 ) -> list:
-    if lines is None:
-        lines = []
+    """Kumpulkan (baris_kolom1, elemen_char_atau_None) 2 entri per node --
+    entri pertama = baris karakter+cabang pohon, entri kedua = baris
+    kontinuasi (buat ditempeli arti di kolom 2). Kolom 1 TIDAK py bacaan/arti
+    sama sekali -- itu sepenuhnya urusan kolom 2, dirakit terpisah di
+    _render_dekomposisi_tree() supaya lebar kolom 1 bisa dihitung dulu
+    sebelum kolom 2 ditempel (perataan butuh tahu lebar maksimum duluan)."""
+    if out is None:
+        out = []
     if node_count is None:
         node_count = [0]
 
-    # Guard defensif -- data asli tidak pernah sedalam/sebesar ini (max
-    # depth 10, max 23 node di 13.141 baris), tapi tetap dijaga kalau ada
-    # data baru yang lebih ekstrem di masa depan.
     if depth > MAX_TREE_DEPTH_GUARD or node_count[0] > MAX_TREE_NODE_GUARD:
-        lines.append(prefix + "└─ …(dipotong, tree terlalu besar)")
-        return lines
+        out.append((prefix + "└─ …(dipotong)", None))
+        out.append((prefix + "   ", None))
+        return out
 
-    label = _format_tree_node_label(node.get("element"), reading_lookup)
+    char = node.get("element")
     node_count[0] += 1
+
     if is_root:
-        lines.append(label)
+        out.append((char or "？", char))
         child_prefix = ""
+        # Baris kontinuasi root selalu pakai "│" -- root dianggap selalu
+        # "berlanjut" ke children-nya (lihat diskusi format, root tidak py
+        # sibling jadi is_last tidak relevan untuknya).
+        out.append(("│", None))
     else:
         connector = "└─ " if is_last else "├─ "
-        lines.append(prefix + connector + label)
+        out.append((prefix + connector + (char or "？"), char))
         child_prefix = prefix + ("   " if is_last else "│  ")
+        # Baris kontinuasi node non-root = child_prefix apa adanya (yang
+        # dipakai buat rekursi ke children-nya) -- otomatis py "│" di ujung
+        # kalau node ini py sibling setelahnya (is_last=False), dan polos
+        # spasi kalau node ini yang terakhir di levelnya.
+        out.append((child_prefix, None))
 
     children = node.get("g", [])
     for i, child in enumerate(children):
-        _render_tree_lines(
-            child, reading_lookup, child_prefix, i == len(children) - 1,
-            False, depth + 1, lines, node_count,
+        _collect_tree_col1(
+            child, child_prefix, i == len(children) - 1, False,
+            depth + 1, out, node_count,
         )
-    return lines
+    return out
 
 
 def _render_dekomposisi_tree(entry: dict, reading_lookup: dict) -> Optional[str]:
-    """Cascading tree dekomposisi grafis (KanjiVG), pakai box-drawing chars.
-    Lihat kanji_fields.py untuk rasional kenapa ini DIREVISI dari keputusan
-    awal "jangan pernah dirender sebagai pohon". Hanya return isi kalau
-    root punya minimal 1 children -- kanji yang struktur_dekomposisi_kanjivg-
-    nya cuma leaf diri sendiri (118 dari 6.397) dianggap tidak punya data
-    dekomposisi yang berarti untuk ditampilkan."""
+    """Cascading tree dekomposisi grafis (KanjiVG), 2 kolom: kolom 1 pohon +
+    karakter, kolom 2 bacaan (baris ganjil)/arti (baris genap), dirata pakai
+    SPASI ke lebar tetap (bukan tab -- tab loncat ke tab-stop client,
+    NGGAK dijamin rata kalau prefix pohon beda panjang per kedalaman, lihat
+    diskusi). Lihat kanji_fields.py untuk rasional kenapa struktur ini
+    DIREVISI dari keputusan awal "jangan pernah dirender sebagai pohon".
+    Hanya return isi kalau root punya minimal 1 children -- kanji yang
+    struktur_dekomposisi_kanjivg-nya cuma leaf diri sendiri (118 dari 6.397)
+    dianggap tidak punya data dekomposisi yang berarti."""
     tree = _parse_object(entry.get("struktur_dekomposisi_kanjivg"))
     if not tree or not tree.get("g"):
         return None
-    lines = _render_tree_lines(tree, reading_lookup)
-    return "\n".join(lines)
+
+    col1_entries = _collect_tree_col1(tree)
+    target_width = max(_display_width(line) for line, _ in col1_entries) + TREE_COLUMN_GAP
+
+    out_lines = []
+    for i in range(0, len(col1_entries), 2):
+        char_line, char_el = col1_entries[i]
+        cont_line, _ = col1_entries[i + 1]
+        reading_line, meaning_line = _node_col2_lines(char_el, reading_lookup)
+        out_lines.append(_pad_to_width(char_line, target_width) + reading_line)
+        out_lines.append(_pad_to_width(cont_line, target_width) + meaning_line)
+
+    return "\n".join(out_lines)
 
 
 def _render_kanji_terkait(entry: dict) -> Optional[str]:
@@ -411,15 +475,15 @@ def _render_kanji_terkait(entry: dict) -> Optional[str]:
 
     lines = []
     if antonim:
-        lines.append(f"**Antonim**: {'、'.join(antonim)}")
+        lines.append(f"**対義語 (Antonim)**: {'、'.join(antonim)}")
     if sinonim:
-        lines.append(f"**Sinonim**: {'、'.join(sinonim)}")
+        lines.append(f"**類義語 (Sinonim)**: {'、'.join(sinonim)}")
     if mirip:
         lines.append(f"**Mirip Bentuk**: {'、'.join(mirip)}")
     if varian:
-        lines.append(f"**Varian**: {'、'.join(varian)}")
+        lines.append(f"**異体字 (Varian)**: {'、'.join(varian)}")
     if _has_content(kyuujitai):
-        lines.append(f"**Bentuk Lama (旧字体)**: {kyuujitai}")
+        lines.append(f"**旧字体 (Bentuk Lama)**: {kyuujitai}")
 
     return "\n".join(lines) if lines else None
 
@@ -440,10 +504,11 @@ def build_detail_pages(entry: dict, arti_id: Optional[str], reading_lookup: dict
     """Pagination DINAMIS -- lihat modul docstring untuk aturan tiap halaman.
 
     Halaman 3 (cascading tree dekomposisi) sengaja pakai embed.description
-    (batas 4096 char), BUKAN embed field (batas 1024 char) -- tree terbesar
-    di seluruh data (囓, 23 node) ~1.187 karakter, sudah lewat batas field
-    tapi masih aman jauh di bawah batas description. Dibungkus code block
-    ``` supaya box-drawing chars (├─ └─ │, gaya npm package "kanji") rata (perlu font monospace)."""
+    (batas 4096 char), BUKAN embed field (batas 1024 char) -- lihat
+    _render_dekomposisi_tree() untuk detail format 2-kolom (pohon + bacaan/
+    arti) yang dirata pakai spasi, bukan tab. Dibungkus code block ``` supaya
+    box-drawing chars (├─ └─ │) & perataan kolomnya rata (perlu font
+    monospace)."""
     color = LEVEL_COLOR.get(entry.get("jlpt_baru"), discord.Color.blurple())
     title = f"📖 {_entry_title(entry)}"
     footer = _level_badges(entry)
@@ -456,11 +521,11 @@ def build_detail_pages(entry: dict, arti_id: Optional[str], reading_lookup: dict
     arti = _render_arti(entry, arti_id)
     radikal = _render_radikal(entry)
     if bacaan:
-        _add_long_field(page1, "🔤 Bacaan", bacaan)
+        _add_long_field(page1, "読み方 (Bacaan)", bacaan)
     if arti:
-        _add_long_field(page1, "💬 Arti", arti)
+        _add_long_field(page1, "意味 (Makna)", arti)
     if radikal:
-        _add_long_field(page1, "🧩 Radikal", radikal)
+        _add_long_field(page1, "部首 (Radikal)", radikal)
     if not (bacaan or arti or radikal):
         page1.description = "Belum ada detail bacaan/arti/radikal untuk kanji ini di sumber data."
     pages.append(page1)
@@ -469,14 +534,14 @@ def build_detail_pages(entry: dict, arti_id: Optional[str], reading_lookup: dict
     jukugo = _render_jukugo(entry)
     if jukugo:
         page2 = discord.Embed(title=title, color=color)
-        _add_long_field(page2, "📝 Jukugo Contoh", jukugo)
+        _add_long_field(page2, "熟語 (Contoh Kata)", jukugo)
         pages.append(page2)
 
     # Halaman 3 -- hanya kalau kanji ini punya tree dekomposisi nyata
     # (root punya children, bukan cuma leaf diri sendiri).
     tree_text = _render_dekomposisi_tree(entry, reading_lookup)
     if tree_text:
-        page3 = discord.Embed(title=f"{title} — Dekomposisi", color=color)
+        page3 = discord.Embed(title=f"{title} — 分解 (Dekomposisi)", color=color)
         page3.description = f"```\n{tree_text}\n```"
         pages.append(page3)
 
@@ -486,9 +551,9 @@ def build_detail_pages(entry: dict, arti_id: Optional[str], reading_lookup: dict
     if terkait or referensi:
         page4 = discord.Embed(title=title, color=color)
         if terkait:
-            _add_long_field(page4, "🔗 Kanji Terkait", terkait)
+            _add_long_field(page4, "関連字 (Kanji Terkait)", terkait)
         if referensi:
-            _add_long_field(page4, "📎 Referensi", referensi)
+            _add_long_field(page4, "Referensi", referensi)
         pages.append(page4)
 
     total = len(pages)
