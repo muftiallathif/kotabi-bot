@@ -1,69 +1,37 @@
 """
 features/dictionary/kanji_cog.py — Kamus Kanji Bahasa Jepang (/kanji)
-=========================================================================
-Beda dengan bunpou_cog.py/kotoba_cog.py: data kanji SUDAH LENGKAP (hasil
-gabungan 4 sumber terbuka, lihat README.md database gabungan kanji),
-bukan hasil authoring manual satu-per-satu. Effort di sini sepenuhnya di
-pemetaan skema -> kategori tampilan, bukan pengisian data.
+========================================================================
+Mengikuti arsitektur `/bunpou` dan `/kotoba` (bunpou_cog.py/kotoba_cog.py)
+sedapat mungkin: gating lewat shared.checks.has_dic_access(), mode
+detail + mode list/browse, dropdown "pilih untuk detail" dengan access
+check ulang di callback, loader full-replace tiap cog_load()/reload.
 
-Detail keputusan desain lengkap ada di panduan-kamus-kanji-versi-ringkas.md
-(termasuk kenapa TIDAK JOIN ke radikal_master.csv di v1, dan kenapa
-struktur_dekomposisi_kanjivg tidak pernah dirender sebagai pohon utuh).
-Ringkasnya:
+BEDA UTAMA dengan /bunpou & /kotoba (lihat panduan-kamus-kanji-versi-ringkas.md
+untuk rasional lengkap tiap keputusan di bawah ini — SEMUA keputusan di sana
+final, tidak didiskusikan ulang di sini):
 
-- Sumber utama: kanji_master.csv (13.141 baris, 41 kolom, CSV standar
-  koma+quote RFC4180 -- BEDA dari bunpou/kotoba yang tab-delimited ekspor
-  Anki). Beberapa kolom isinya TEKS JSON di dalam satu sel (list/object) --
-  lihat kanji_fields.py LIST_JSON_FIELDS/OBJECT_JSON_FIELDS, di-json.loads()
-  saat render, disimpan TEXT apa adanya di SQLite (tidak dinormalisasi ke
-  tabel anak).
-- Overlay tambahan: kanji_meanings_id.csv (2 kolom: kanji, arti_id) --
-  terjemahan Bahasa Indonesia, sengaja file TERPISAH dari kanji_master.csv
-  (supaya tidak fork master data hasil gabungan 4 sumber), BOLEH KOSONG,
-  diisi bertahap. LEFT JOIN saat query detail. Kalau arti_id kosong,
-  fallback ke meanings_en/meaning_jp TANPA placeholder "belum
-  diterjemahkan" ke user.
-- TIDAK JOIN ke radikal_master.csv -- radikal Kanken sudah ter-embed
-  penuh di kolom radikal_info_kanken (object: nomor, strokes, kategori,
-  arti_en, cara_baca_jp, cara_baca_romaji), tidak perlu lookup tambahan.
-- radikal_kanken (1 karakter, skema Kanken) BUKAN hal yang sama dengan
-  radikal_kanjivg (list beberapa karakter, skema KanjiVG, elemen
-  struktural 1-level -- BUKAN pohon dekomposisi penuh, itu tugas
-  struktur_dekomposisi_kanjivg yang nested dan sengaja tidak dirender
-  utuh di sini). Keduanya ditampilkan sebagai baris terpisah, bukan
-  dibandingkan satu-satu.
-- Pagination DINAMIS (1-3 halaman tergantung isi), bukan jumlah tetap:
-    Halaman 1 (selalu ada): Info Dasar + Bacaan + Arti + Radikal ringkas
-    Halaman 2 (kalau jukugo_contoh terisi): Jukugo dikelompokkan per
-      kategori 小/中/高/外
-    Halaman 3 (kalau ada salah satu dari: elemen_kanjivg, kanji terkait,
-      link referensi): Dekomposisi + Kanji Terkait + Referensi
-- Gating akses IDENTIK /bunpou & /kotoba: has_dic_access() dari
-  shared/checks.py, mode list gratis untuk semua role (arti dikunci utk
-  non-akses), mode detail penuh butuh Trial/Companion/Patron/staff.
-
---------------------------------------------------------------------
-KEAMANAN SQL
---------------------------------------------------------------------
-CREATE TABLE memakai nama kolom dari FIELD_NAMES (kanji_fields.py) --
-konstanta tetap, bukan dari CSV/input pengguna. Semua query yang
-menyentuh input pengguna pakai parameter binding ("?"). Insert baris CSV
-lewat bot.RUN_MANY() (executemany).
-
---------------------------------------------------------------------
-LOADER CSV (FULL REPLACE)
---------------------------------------------------------------------
-Sama seperti bunpou_cog.py/kotoba_cog.py: setiap cog_load() / /kanji_reload
-menjalankan full replace (DELETE semua baris, INSERT ulang dari CSV).
-kanji_master.csv DAN kanji_meanings_id.csv masing-masing dimuat penuh
-setiap kali -- overlay terjemahan yang diedit manual otomatis kepakai
-begitu /kanji_reload dijalankan, tidak perlu proses upsert rumit.
-
-Format kanji_master.csv: CSV standar (koma, quote RFC4180 ganda ""), TIDAK
-ada baris metadata #separator seperti ekspor Anki -- header ada di baris
-pertama langsung. Ini beda penting dari bunpou-notes-master.csv/
-kotoba-notes-master.csv yang tab-delimited dan punya baris #separator:Tab
-opsional.
+- Data sumber `kanji_master.csv` SUDAH LENGKAP (bukan hasil authoring
+  manual) — tidak ada validator seperti grammar_validator.py.
+- `kanji_master.csv` adalah CSV comma-delimited BIASA (bukan tab-delimited
+  ala ekspor Anki seperti bunpou/kotoba), dan TIDAK punya baris metadata
+  `#separator:Tab` yang perlu dilewati.
+- 13 kolom sumber berisi JSON-in-cell (list atau object) — lihat
+  kanji_fields.py (LIST_JSON_FIELDS/OBJECT_JSON_FIELDS). Kolom-kolom ini
+  disimpan APA ADANYA sebagai TEXT di SQLite; `json.loads()` dipanggil
+  HANYA saat render (bukan saat load), persis pola yang sudah dipakai
+  bunpou_cog.py/kotoba_cog.py untuk field JSON kompleks mereka sendiri.
+- Ada file overlay TERPISAH `kanji_meanings_id.csv` (2 kolom: kanji,
+  arti_id) untuk terjemahan Bahasa Indonesia — LEFT JOIN saat query detail.
+  File ini BOLEH kosong; fallback ke meanings_en/meaning_jp kalau arti_id
+  belum diisi, TANPA placeholder "belum diterjemahkan" ke user.
+- Pagination DINAMIS 1–3 halaman (bukan selalu 1 atau selalu 2 seperti
+  /kotoba dan /bunpou) — tergantung isi jukugo_contoh dan
+  dekomposisi/kanji-terkait.
+- Filter tambahan di command: jlpt, joyo, kelas_sd (bukan cuma level
+  seperti /bunpou/kotoba).
+- TIDAK ada JOIN ke radikal_master.csv di v1 (lihat §10 panduan) — radikal
+  Kanken diambil dari `radikal_info_kanken` yang sudah ter-embed sebagai
+  object JSON di kanji_master.csv sendiri.
 """
 
 import csv
@@ -81,10 +49,9 @@ from shared.checks import has_dic_access, MSG_DIC_DETAIL_ONLY
 from .kanji_fields import (
     FIELD_NAMES,
     KEY_FIELD,
+    CATEGORY_FIELDS,
     LIST_JSON_FIELDS,
     OBJECT_JSON_FIELDS,
-    HIDDEN_FIELDS,
-    JUKUGO_KATEGORI_LABEL,
 )
 
 _log = logging.getLogger("bot.kanji")
@@ -94,7 +61,7 @@ _log = logging.getLogger("bot.kanji")
 # ============================================================================
 
 CSV_PATH = os.getenv("ALT_KANJI_CSV_PATH") or "features/dictionary/kanji_master.csv"
-MEANINGS_CSV_PATH = (
+MEANINGS_ID_CSV_PATH = (
     os.getenv("ALT_KANJI_MEANINGS_ID_CSV_PATH") or "features/dictionary/kanji_meanings_id.csv"
 )
 
@@ -106,11 +73,21 @@ _COLUMN_DEFS = ", ".join(
     for col in FIELD_NAMES
 )
 CREATE_TABLE = f"CREATE TABLE IF NOT EXISTS {TABLE_NAME} ({_COLUMN_DEFS});"
-CREATE_MEANINGS_TABLE = (
-    f"CREATE TABLE IF NOT EXISTS {MEANINGS_TABLE} (kanji TEXT PRIMARY KEY, arti_id TEXT);"
-)
 
-DELETE_ALL = f"DELETE FROM {TABLE_NAME};"
+CREATE_MEANINGS_TABLE = f"""
+CREATE TABLE IF NOT EXISTS {MEANINGS_TABLE} (
+    kanji TEXT PRIMARY KEY,
+    arti_id TEXT
+);"""
+
+CREATE_INDEXES = [
+    f"CREATE INDEX IF NOT EXISTS idx_kanji_jlpt ON {TABLE_NAME} (jlpt_baru);",
+    f"CREATE INDEX IF NOT EXISTS idx_kanji_joyo ON {TABLE_NAME} (joyo_status);",
+    f"CREATE INDEX IF NOT EXISTS idx_kanji_kanken ON {TABLE_NAME} (kanken_level);",
+    f"CREATE INDEX IF NOT EXISTS idx_kanji_kelas_sd ON {TABLE_NAME} (kyouiku_kelas_sd);",
+]
+
+DELETE_ALL_ENTRIES = f"DELETE FROM {TABLE_NAME};"
 DELETE_ALL_MEANINGS = f"DELETE FROM {MEANINGS_TABLE};"
 
 INSERT_ENTRY = (
@@ -119,72 +96,104 @@ INSERT_ENTRY = (
 )
 INSERT_MEANING = f"INSERT INTO {MEANINGS_TABLE} (kanji, arti_id) VALUES (?, ?);"
 
-GET_ENTRY = f"SELECT {', '.join(FIELD_NAMES)} FROM {TABLE_NAME} WHERE {KEY_FIELD} = ?;"
-GET_ARTI_ID = f"SELECT arti_id FROM {MEANINGS_TABLE} WHERE kanji = ?;"
+_ENTRY_COLS = ", ".join(f"k.{c}" for c in FIELD_NAMES)
 
-GET_ALL_FOR_LIST_BASE = (
-    f"SELECT kanji, meanings_en, jlpt_baru, joyo_status, kyouiku_kelas_sd, kanken_kyu_resmi "
-    f"FROM {TABLE_NAME}"
-)
+GET_ENTRY = f"""
+SELECT {_ENTRY_COLS}, m.arti_id
+FROM {TABLE_NAME} k
+LEFT JOIN {MEANINGS_TABLE} m ON k.kanji = m.kanji
+WHERE k.kanji = ?;
+"""
+
+GET_ALL_FOR_LIST = f"""
+SELECT k.kanji, k.jlpt_baru, k.joyo_status, k.kyouiku_kelas_sd, k.kanken_kyu_resmi,
+       k.meanings_en, m.arti_id
+FROM {TABLE_NAME} k
+LEFT JOIN {MEANINGS_TABLE} m ON k.kanji = m.kanji
+"""
 
 SEARCH_QUERY = f"""
-SELECT kanji, meanings_en, jlpt_baru, joyo_status, kyouiku_kelas_sd, kanken_kyu_resmi
-FROM {TABLE_NAME}
-WHERE kanji = ?
-   OR on_yomi LIKE '%' || ? || '%'
-   OR kun_yomi LIKE '%' || ? || '%'
-   OR meanings_en LIKE '%' || ? || '%'
-ORDER BY (jlpt_baru IS NULL), jlpt_baru ASC, jumlah_goresan ASC
+SELECT k.kanji, k.on_yomi, k.kun_yomi, k.meanings_en, k.jlpt_baru
+FROM {TABLE_NAME} k
+WHERE k.kanji LIKE '%' || ? || '%'
+   OR k.on_yomi LIKE '%' || ? || '%'
+   OR k.kun_yomi LIKE '%' || ? || '%'
+   OR k.nanori LIKE '%' || ? || '%'
+   OR k.meanings_en LIKE '%' || ? || '%'
+   OR k.meaning_jp LIKE '%' || ? || '%'
+ORDER BY (k.jlpt_baru IS NULL OR k.jlpt_baru = ''), k.jumlah_goresan ASC, k.kanji ASC
+LIMIT 25;
+"""
+
+SEARCH_QUERY_JLPT = f"""
+SELECT k.kanji, k.on_yomi, k.kun_yomi, k.meanings_en, k.jlpt_baru
+FROM {TABLE_NAME} k
+WHERE k.jlpt_baru = ?
+AND (k.kanji LIKE '%' || ? || '%' OR k.on_yomi LIKE '%' || ? || '%' OR k.kun_yomi LIKE '%' || ? || '%'
+     OR k.nanori LIKE '%' || ? || '%' OR k.meanings_en LIKE '%' || ? || '%' OR k.meaning_jp LIKE '%' || ? || '%')
+ORDER BY k.jumlah_goresan ASC, k.kanji ASC
 LIMIT 25;
 """
 
 JLPT_CHOICES = ["N5", "N4", "N3", "N2", "N1"]
+JOYO_CHOICES = [("Ya", "TRUE"), ("Tidak", "FALSE")]
 KELAS_SD_CHOICES = ["1", "2", "3", "4", "5", "6"]
-
-LEVEL_COLOR = {
-    "N5": discord.Color.green(),
-    "N4": discord.Color.blue(),
-    "N3": discord.Color.gold(),
-    "N2": discord.Color.orange(),
-    "N1": discord.Color.red(),
-}
 
 LIST_PAGE_SIZE = 10
 PAGINATOR_TIMEOUT_SECONDS = 800
 MAX_FIELD_LENGTH = 1024
-JUKUGO_CAP_PER_KATEGORI = 15
+
+JUKUGO_KATEGORI_LABEL = {
+    "小": "🟢 SD",
+    "中": "🟡 SMP",
+    "高": "🔴 SMA",
+    "外": "⚪ Luar Kurikulum",
+}
+JUKUGO_KATEGORI_ORDER = ["小", "中", "高", "外"]
+JUKUGO_MAX_PER_KATEGORI = 15
+
+# Field teknis yang TIDAK PERNAH dirender ke user (§3.8/§9). kanken_url,
+# kanjipedia_url, dan jumlah_kosakata_terkait SENGAJA tidak masuk sini —
+# tiga field itu tetap dirender (link referensi & statistik kecil).
+HIDDEN_TECHNICAL_FIELDS = {
+    "unicode", "jis_menkuten", "jis_unicode", "jis_level",
+    "kategori_nama_anak", "kanken_zititai_kubun", "kanken_dict_page", "sumber",
+}
 
 
 # ============================================================================
-# HELPERS -- JSON-in-cell parsing (BEDA dari bunpou/kotoba, lihat modul docstring)
+# HELPERS
 # ============================================================================
-
-def _row_to_dict(row: tuple) -> dict:
-    return dict(zip(FIELD_NAMES, row))
-
 
 def _has_content(value: Optional[str]) -> bool:
-    return bool(value) and value.strip() not in ("", "—", "null")
+    return bool(value) and value.strip() not in ("", "—")
 
 
-def _parse_list(raw: Optional[str]) -> list:
-    if not raw:
+def _load_list(raw: Optional[str]) -> list:
+    if not _has_content(raw):
         return []
     try:
-        data = json.loads(raw)
-        return data if isinstance(data, list) else []
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, list) else []
     except (json.JSONDecodeError, TypeError):
         return []
 
 
-def _parse_object(raw: Optional[str]) -> Optional[dict]:
-    if not raw:
+def _load_object(raw: Optional[str]) -> Optional[dict]:
+    if not _has_content(raw):
         return None
     try:
-        data = json.loads(raw)
-        return data if isinstance(data, dict) else None
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else None
     except (json.JSONDecodeError, TypeError):
         return None
+
+
+def _row_to_dict(row: tuple) -> dict:
+    """Baris dari GET_ENTRY (semua FIELD_NAMES + arti_id di kolom terakhir)."""
+    d = dict(zip(FIELD_NAMES, row[:-1]))
+    d["arti_id"] = row[-1]
+    return d
 
 
 def _add_requester_info(embed: discord.Embed, user: discord.User) -> discord.Embed:
@@ -199,234 +208,445 @@ def _add_long_field(embed: discord.Embed, name: str, value: str):
     if len(value) <= MAX_FIELD_LENGTH:
         embed.add_field(name=name, value=value, inline=False)
         return
-    # Potong aman di batas kalimat/koma terdekat, bukan di tengah karakter.
-    truncated = value[: MAX_FIELD_LENGTH - 20].rsplit("\n", 1)[0]
-    embed.add_field(name=name, value=truncated + "\n…(dipotong)", inline=False)
+    first = True
+    remaining = value
+    while remaining:
+        chunk, remaining = remaining[:MAX_FIELD_LENGTH], remaining[MAX_FIELD_LENGTH:]
+        embed.add_field(name=name if first else f"{name} (lanjutan)", value=chunk, inline=False)
+        first = False
 
 
 # ============================================================================
-# RENDERING PER KATEGORI
+# AUTOCOMPLETE
+# ============================================================================
+
+async def kanji_autocomplete(interaction: discord.Interaction, current_input: str):
+    """Autocomplete gabungan: kanji itu sendiri, on_yomi/kun_yomi/nanori,
+    meanings_en/meaning_jp. Difilter oleh parameter `jlpt` kalau sudah diisi."""
+    bot: KotabiBot = interaction.client
+    current_input = current_input.strip()
+    jlpt = getattr(interaction.namespace, "jlpt", None)
+
+    if jlpt:
+        rows = await bot.GET(SEARCH_QUERY_JLPT, (jlpt, current_input, current_input, current_input, current_input, current_input, current_input))
+    else:
+        rows = await bot.GET(SEARCH_QUERY, (current_input, current_input, current_input, current_input, current_input, current_input))
+
+    choices = []
+    for kanji, on_yomi, kun_yomi, meanings_en, jlpt_baru in rows:
+        meanings = _load_list(meanings_en)
+        meaning_preview = meanings[0] if meanings else "—"
+        level_tag = f" [{jlpt_baru}]" if jlpt_baru else ""
+        label = f"{kanji} — {meaning_preview}{level_tag}"[:100]
+        choices.append(discord.app_commands.Choice(name=label, value=kanji))
+    return choices[:25]
+
+
+# ============================================================================
+# RENDERING — MODE DETAIL
 # ============================================================================
 
 def _entry_title(entry: dict) -> str:
-    kanji = entry.get("kanji", "?")
-    goresan = entry.get("jumlah_goresan")
-    title = f"{kanji}"
-    if _has_content(goresan):
-        title += f" （{goresan} goresan）"
-    return title
+    return f"📖 {entry.get('kanji', '?')}"
 
 
-def _level_badges(entry: dict) -> str:
+def _entry_footer(entry: dict) -> str:
     parts = []
+    jlpt = entry.get("jlpt_baru")
+    if _has_content(jlpt):
+        parts.append(f"JLPT {jlpt}")
     if entry.get("joyo_status") == "TRUE":
         urutan = entry.get("joyo_urutan")
-        parts.append(f"Jōyō #{urutan}" if _has_content(urutan) else "Jōyō")
-    if _has_content(entry.get("jlpt_baru")):
-        parts.append(f"JLPT {entry['jlpt_baru']}")
-    if _has_content(entry.get("kyouiku_kelas_sd")):
-        parts.append(f"Kyōiku Kelas {entry['kyouiku_kelas_sd']} SD")
-    if _has_content(entry.get("kanken_kyu_resmi")):
-        parts.append(f"Kanken {entry['kanken_kyu_resmi']}")
-    if _has_content(entry.get("freq_rank_mainichi_shinbun")):
-        parts.append(f"Frekuensi #{entry['freq_rank_mainichi_shinbun']} (Mainichi Shinbun)")
-    return " · ".join(parts) if parts else "Belum terklasifikasi (di luar Jōyō/JLPT/Kanken resmi)"
+        parts.append(f"Jōyō #{urutan}" if _has_content(urutan) else "Jōyō Kanji")
+    kanken_label = entry.get("kanken_kyu_resmi") or entry.get("kanken_level")
+    if _has_content(kanken_label):
+        parts.append(f"Kanken {kanken_label}")
+    kosakata = entry.get("jumlah_kosakata_terkait")
+    if _has_content(kosakata) and kosakata != "0":
+        parts.append(f"Dipakai di {kosakata} entri kosakata")
+    return " · ".join(parts)
 
 
-def _render_bacaan(entry: dict) -> Optional[str]:
-    on_yomi = _parse_list(entry.get("on_yomi"))
-    kun_yomi = _parse_list(entry.get("kun_yomi"))
-    nanori = _parse_list(entry.get("nanori"))
-    if not (on_yomi or kun_yomi or nanori):
-        return None
+def _render_info_dasar(entry: dict) -> str:
     lines = []
-    if on_yomi:
-        lines.append(f"**On'yomi**: {'、'.join(on_yomi)}")
-    if kun_yomi:
-        lines.append(f"**Kun'yomi**: {'、'.join(kun_yomi)}")
-    if nanori:
-        lines.append(f"**Nanori** (bacaan nama): {'、'.join(nanori)}")
+    goresan = entry.get("jumlah_goresan")
+    if _has_content(goresan):
+        lines.append(f"**Jumlah Goresan:** {goresan}")
+
+    if entry.get("joyo_status") == "TRUE":
+        urutan = entry.get("joyo_urutan")
+        badge = f"🏅 Jōyō Kanji (#{urutan})" if _has_content(urutan) else "🏅 Jōyō Kanji"
+        lines.append(badge)
+
+    kelas_sd = entry.get("kyouiku_kelas_sd")
+    if _has_content(kelas_sd):
+        lines.append(f"**Kelas SD:** {kelas_sd}")
+
+    jlpt = entry.get("jlpt_baru")
+    if _has_content(jlpt):
+        lines.append(f"**JLPT:** {jlpt}")
+
+    kanken_label = entry.get("kanken_kyu_resmi")
+    kanken_fallback = entry.get("kanken_level")
+    if _has_content(kanken_label):
+        lines.append(f"**Kanken:** {kanken_label}")
+    elif _has_content(kanken_fallback):
+        lines.append(f"**Kanken:** {kanken_fallback}")
+
+    freq = entry.get("freq_rank_mainichi_shinbun")
+    if _has_content(freq):
+        lines.append(f"**Peringkat Frekuensi** (Mainichi Shinbun): #{freq}")
+
     return "\n".join(lines)
 
 
-def _render_arti(entry: dict, arti_id: Optional[str]) -> Optional[str]:
-    meanings_en = _parse_list(entry.get("meanings_en"))
+def _render_bacaan(entry: dict) -> Optional[str]:
+    on_yomi = _load_list(entry.get("on_yomi"))
+    kun_yomi = _load_list(entry.get("kun_yomi"))
+    nanori = _load_list(entry.get("nanori"))
+
+    if not on_yomi and not kun_yomi and not nanori:
+        return None
+
+    lines = []
+    if on_yomi:
+        lines.append(f"**On'yomi:** {'、'.join(on_yomi)}")
+    if kun_yomi:
+        lines.append(f"**Kun'yomi:** {'、'.join(kun_yomi)}")
+    if nanori:
+        lines.append(f"**Nanori:** {'、'.join(nanori)}")
+    return "\n".join(lines)
+
+
+def _render_arti(entry: dict) -> Optional[str]:
+    """Fallback rendering sesuai §3.3a: arti_id jadi section utama kalau
+    terisi (meanings_en/meaning_jp tetap tampil sebagai pelengkap di
+    bawahnya), TANPA placeholder kalau arti_id kosong."""
+    arti_id = entry.get("arti_id")
+    meanings_en = _load_list(entry.get("meanings_en"))
     meaning_jp = entry.get("meaning_jp")
+
     lines = []
     if _has_content(arti_id):
-        # arti_id sudah diisi manual -> section utama, EN/JP tetap ditampilkan
-        # sebagai pelengkap di bawahnya (BUKAN digantikan), lihat panduan §3.3a.
         lines.append(f"🇮🇩 {arti_id}")
-        if meanings_en:
-            lines.append(f"🇬🇧 {', '.join(meanings_en)}")
-        if _has_content(meaning_jp):
-            lines.append(f"🇯🇵 {meaning_jp}")
-    else:
-        # arti_id belum diisi -> fallback EN/JP, TANPA placeholder "belum
-        # diterjemahkan" (lihat panduan §3.3a, ini akan jadi mayoritas kanji
-        # di rilis awal, jangan sampai mengganggu tampilan).
-        if meanings_en:
-            lines.append(f"🇬🇧 {', '.join(meanings_en)}")
-        if _has_content(meaning_jp):
-            lines.append(f"🇯🇵 {meaning_jp}")
+    if meanings_en:
+        en_text = ", ".join(meanings_en) if len(meanings_en) <= 3 else \
+            "\n".join(f"{i}. {m}" for i, m in enumerate(meanings_en, start=1))
+        lines.append(f"🇬🇧 {en_text}")
+    if _has_content(meaning_jp):
+        # meaning_jp sudah terformat ①②③ dari sumber, tampil apa adanya.
+        lines.append(f"🇯🇵 {meaning_jp}")
+
     return "\n".join(lines) if lines else None
 
 
-def _render_radikal(entry: dict) -> Optional[str]:
+def _render_radikal_ringkas(entry: dict) -> Optional[str]:
     radikal_kanken = entry.get("radikal_kanken")
-    info = _parse_object(entry.get("radikal_info_kanken"))
-    radikal_kanjivg = _parse_list(entry.get("radikal_kanjivg"))
+    info = _load_object(entry.get("radikal_info_kanken"))
+    radikal_kanjivg = _load_list(entry.get("radikal_kanjivg"))
+    posisi_kiri_kanan = _load_list(entry.get("radikal_posisi_kiri_kanan"))
+    posisi_atas_bawah = _load_list(entry.get("radikal_posisi_atas_bawah"))
+
+    if not _has_content(radikal_kanken) and not info and not radikal_kanjivg:
+        return None
 
     lines = []
     if _has_content(radikal_kanken):
-        line = f"**Radikal (Kanken)**: {radikal_kanken}"
+        main_line = f"**{radikal_kanken}**"
         if info:
             detail_parts = []
             if info.get("cara_baca_jp"):
-                detail_parts.append(f"{info['cara_baca_jp']} ({info.get('cara_baca_romaji', '')})".strip())
+                romaji = info.get("cara_baca_romaji")
+                detail_parts.append(f"{info['cara_baca_jp']}" + (f" ({romaji})" if romaji else ""))
             if info.get("arti_en"):
                 detail_parts.append(info["arti_en"])
             if info.get("kategori"):
-                detail_parts.append(f"kategori {info['kategori']}")
+                detail_parts.append(f"kategori: {info['kategori']}")
             if detail_parts:
-                line += f" — {', '.join(detail_parts)}"
-        lines.append(line)
+                main_line += " — " + ", ".join(detail_parts)
+        lines.append(main_line)
+    elif info:
+        detail_parts = []
+        if info.get("arti_en"):
+            detail_parts.append(info["arti_en"])
+        if info.get("kategori"):
+            detail_parts.append(f"kategori: {info['kategori']}")
+        if detail_parts:
+            lines.append(", ".join(detail_parts))
 
-    # radikal_kanjivg BUKAN radikal tunggal alternatif -- daftar beberapa
-    # elemen struktural versi KanjiVG, ditampilkan terpisah (lihat catatan
-    # penting di kanji_fields.py, jangan disamakan dengan radikal_kanken).
+    # radikal_kanjivg BUKAN "kandidat radikal alternatif" yang setara dan
+    # bisa dibandingkan langsung ke radikal_kanken — radikal_kanken mewakili
+    # SATU radikal (metodologi Kanken, 214 bushu), sedangkan radikal_kanjivg
+    # adalah representasi KOMPOSISI/POHON kanji menurut metodologi KanjiVG
+    # (bisa berisi >1 komponen, bahkan duplikat kalau komponen yang sama
+    # muncul berkali-kali di posisi berbeda pada pohon — mis. 三 = 一+一+一).
+    # Karena itu ditampilkan APA ADANYA di sini (dedupe untuk keterbacaan,
+    # tapi catat jumlah kemunculan asli kalau ada duplikat), TIDAK
+    # dibandingkan/digating terhadap radikal_kanken.
     if radikal_kanjivg:
-        lines.append(f"**Elemen KanjiVG**: {'、'.join(radikal_kanjivg)}")
+        deduped = list(dict.fromkeys(radikal_kanjivg))
+        text = "、".join(deduped)
+        if len(deduped) != len(radikal_kanjivg):
+            text += f" ({len(radikal_kanjivg)}x kemunculan di pohon)"
+        lines.append(f"_Komposisi (KanjiVG):_ {text}")
+
+    posisi_notes = []
+    if posisi_kiri_kanan:
+        posisi_notes.append(f"kiri-kanan: {'、'.join(posisi_kiri_kanan)}")
+    if posisi_atas_bawah:
+        posisi_notes.append(f"atas-bawah: {'、'.join(posisi_atas_bawah)}")
+    if posisi_notes:
+        lines.append(f"_Posisi:_ {'; '.join(posisi_notes)}")
 
     return "\n".join(lines) if lines else None
 
 
 def _render_jukugo(entry: dict) -> Optional[str]:
-    jukugo = _parse_list(entry.get("jukugo_contoh"))
+    jukugo = _load_list(entry.get("jukugo_contoh"))
     if not jukugo:
         return None
 
-    grouped: dict[str, list[str]] = {}
+    by_kategori: dict[str, list[str]] = {}
     for item in jukugo:
         if not isinstance(item, dict):
             continue
         kategori = item.get("kategori", "外")
         kata = item.get("kata")
         if kata:
-            grouped.setdefault(kategori, []).append(kata)
+            by_kategori.setdefault(kategori, []).append(kata)
 
-    lines = []
-    # Urutan tampil: 小 -> 中 -> 高 -> 外 (mudah ke sulit), sesuai urutan
-    # JUKUGO_KATEGORI_LABEL di kanji_fields.py.
-    for kategori in ["小", "中", "高", "外"]:
-        kata_list = grouped.get(kategori)
-        if not kata_list:
+    blocks = []
+    for kategori in JUKUGO_KATEGORI_ORDER:
+        words = by_kategori.get(kategori)
+        if not words:
             continue
         label = JUKUGO_KATEGORI_LABEL.get(kategori, kategori)
-        shown = kata_list[:JUKUGO_CAP_PER_KATEGORI]
-        line = f"**{label}**: {'、'.join(shown)}"
-        if len(kata_list) > JUKUGO_CAP_PER_KATEGORI:
-            line += f" (+{len(kata_list) - JUKUGO_CAP_PER_KATEGORI} lainnya)"
-        lines.append(line)
+        shown = words[:JUKUGO_MAX_PER_KATEGORI]
+        text = "、".join(shown)
+        if len(words) > JUKUGO_MAX_PER_KATEGORI:
+            text += f" (+{len(words) - JUKUGO_MAX_PER_KATEGORI} lainnya)"
+        blocks.append(f"**{label}**\n{text}")
 
-    return "\n".join(lines) if lines else None
+    return "\n\n".join(blocks) if blocks else None
 
 
-def _render_dekomposisi(entry: dict) -> Optional[str]:
-    # struktur_dekomposisi_kanjivg SENGAJA tidak dirender (pohon nested,
-    # bisa >5 level dalam -- lihat modul docstring). Cukup elemen_kanjivg
-    # (list flat, superset semua komponen).
-    elemen = _parse_list(entry.get("elemen_kanjivg"))
+def _render_dekomposisi_flat(entry: dict) -> Optional[str]:
+    """Fallback kalau struktur_dekomposisi_kanjivg tidak ada (51.3% kanji) —
+    pakai elemen_kanjivg (list flat, superset semua komponen)."""
+    elemen = _load_list(entry.get("elemen_kanjivg"))
     if not elemen:
         return None
-    return f"**Komponen Penyusun**: {'、'.join(elemen)}"
+    return "、".join(elemen)
+
+
+TREE_MAX_CHARS = 900  # sisakan ruang untuk fence ``` dan catatan pemotongan
+TREE_INDENT = "  "
+
+
+def _extract_tree_elements(node: dict) -> list[str]:
+    """Kumpulkan semua karakter (termasuk duplikat) yang muncul di pohon,
+    dipakai untuk satu query batch lookup bacaan/arti ke kanji_entries —
+    bukan query per-node (hindari N+1)."""
+    elements = []
+    char = node.get("element")
+    if char:
+        elements.append(char)
+    for child in node.get("g") or []:
+        if isinstance(child, dict):
+            elements.extend(_extract_tree_elements(child))
+    return elements
+
+
+def _format_tree_line(char: str, depth: int, info: Optional[dict]) -> str:
+    parts = [f"{TREE_INDENT * depth}{char}"]
+    if info:
+        if info.get("on"):
+            parts.append("・".join(info["on"]))
+        if info.get("kun"):
+            parts.append("・".join(info["kun"]))
+        if info.get("meanings"):
+            parts.append(", ".join(info["meanings"][:3]))
+    return "  ".join(parts)
+
+
+def _render_tree_lines(node: dict, depth: int, lookup: dict[str, dict]) -> list[str]:
+    char = node.get("element", "?")
+    info = lookup.get(char)
+    lines = [_format_tree_line(char, depth, info)]
+    for child in node.get("g") or []:
+        if isinstance(child, dict):
+            lines.extend(_render_tree_lines(child, depth + 1, lookup))
+    return lines
+
+
+async def _build_dekomposisi_text(bot: KotabiBot, entry: dict) -> Optional[str]:
+    """Kalau struktur_dekomposisi_kanjivg ada, render sebagai cascading tree
+    (indentasi per level + bacaan/arti tiap komponen kalau komponen itu juga
+    punya entri kanji sendiri di kanji_entries). Komponen yang bukan kanji
+    penuh (radikal murni, mis. 丨) tetap tampil sebagai karakter saja tanpa
+    bacaan/arti — memang tidak ada datanya di kanji_master.csv.
+
+    Fallback ke daftar flat (elemen_kanjivg) kalau struktur_dekomposisi_kanjivg
+    kosong (51.3% kanji tidak punya field ini)."""
+    struktur = _load_object(entry.get("struktur_dekomposisi_kanjivg"))
+    if not struktur:
+        return _render_dekomposisi_flat(entry)
+
+    root_char = entry.get("kanji")
+    all_elements = {c for c in _extract_tree_elements(struktur) if c and c != root_char}
+
+    lookup: dict[str, dict] = {}
+    if all_elements:
+        elements_list = list(all_elements)
+        placeholders = ", ".join("?" for _ in elements_list)
+        rows = await bot.GET(
+            f"SELECT kanji, on_yomi, kun_yomi, meanings_en FROM {TABLE_NAME} WHERE kanji IN ({placeholders});",
+            tuple(elements_list),
+        )
+        for kj, on, kun, men in rows:
+            lookup[kj] = {"on": _load_list(on), "kun": _load_list(kun), "meanings": _load_list(men)}
+
+    # Root selalu pakai data dari `entry` sendiri (sudah pasti akurat &
+    # tidak perlu query tambahan), bukan hasil lookup batch di atas.
+    lookup[root_char] = {
+        "on": _load_list(entry.get("on_yomi")),
+        "kun": _load_list(entry.get("kun_yomi")),
+        "meanings": _load_list(entry.get("meanings_en")),
+    }
+
+    lines = _render_tree_lines(struktur, 0, lookup)
+
+    # Guard batas panjang field embed Discord (1024 char) — potong baris
+    # paling bawah dulu (level terdalam/terjauh), bukan tengah kalimat.
+    kept: list[str] = []
+    total_len = 0
+    for line in lines:
+        if total_len + len(line) + 1 > TREE_MAX_CHARS:
+            break
+        kept.append(line)
+        total_len += len(line) + 1
+
+    text = "\n".join(kept)
+    if len(kept) < len(lines):
+        text += f"\n… (+{len(lines) - len(kept)} baris komponen lainnya, pohon dipotong)"
+
+    return f"```\n{text}\n```"
 
 
 def _render_kanji_terkait(entry: dict) -> Optional[str]:
-    antonim = _parse_list(entry.get("antonim"))
-    sinonim = _parse_list(entry.get("sinonim"))
-    mirip = _parse_list(entry.get("mirip_bentuk"))
-    varian = _parse_list(entry.get("varian"))
-    kyuujitai = entry.get("bentuk_lama_kyuujitai")
+    antonim = _load_list(entry.get("antonim"))
+    sinonim = _load_list(entry.get("sinonim"))
+    mirip = _load_list(entry.get("mirip_bentuk"))
+    varian = _load_list(entry.get("varian"))
+
+    if not (antonim or sinonim or mirip or varian):
+        return None
 
     lines = []
     if antonim:
-        lines.append(f"**Antonim**: {'、'.join(antonim)}")
+        lines.append(f"**Antonim:** {'、'.join(antonim)}")
     if sinonim:
-        lines.append(f"**Sinonim**: {'、'.join(sinonim)}")
+        lines.append(f"**Sinonim:** {'、'.join(sinonim)}")
     if mirip:
-        lines.append(f"**Mirip Bentuk**: {'、'.join(mirip)}")
+        lines.append(f"**Mirip Bentuk:** {'、'.join(mirip)}")
     if varian:
-        lines.append(f"**Varian**: {'、'.join(varian)}")
-    if _has_content(kyuujitai):
-        lines.append(f"**Bentuk Lama (旧字体)**: {kyuujitai}")
+        lines.append(f"**Varian:** {'、'.join(varian)}")
 
-    return "\n".join(lines) if lines else None
+    bentuk_lama = entry.get("bentuk_lama_kyuujitai")
+    if _has_content(bentuk_lama):
+        lines.append(f"_Bentuk lama (旧字体): {bentuk_lama}_")
+
+    return "\n".join(lines)
 
 
 def _render_referensi(entry: dict) -> Optional[str]:
-    lines = []
-    jumlah_kosakata = entry.get("jumlah_kosakata_terkait")
-    if _has_content(jumlah_kosakata) and jumlah_kosakata != "0":
-        lines.append(f"📚 Dipakai di **{jumlah_kosakata}** entri kosakata")
-    if _has_content(entry.get("kanjipedia_url")):
-        lines.append(f"[Kanjipedia]({entry['kanjipedia_url']})")
-    if _has_content(entry.get("kanken_url")):
-        lines.append(f"[jitenon.jp]({entry['kanken_url']})")
-    return "\n".join(lines) if lines else None
+    kanjipedia = entry.get("kanjipedia_url")
+    kanken_url = entry.get("kanken_url")
+    links = []
+    if _has_content(kanjipedia):
+        links.append(f"[Kanjipedia]({kanjipedia})")
+    if _has_content(kanken_url):
+        links.append(f"[Kanken]({kanken_url})")
+    return " · ".join(links) if links else None
 
 
-def build_detail_pages(entry: dict, arti_id: Optional[str]) -> list[discord.Embed]:
-    """Pagination DINAMIS -- lihat modul docstring untuk aturan tiap halaman."""
-    color = LEVEL_COLOR.get(entry.get("jlpt_baru"), discord.Color.blurple())
-    title = f"📖 {_entry_title(entry)}"
-    footer = _level_badges(entry)
+def build_detail_pages(
+    entry: dict, show_meaning: bool = True, dekomposisi_text: Optional[str] = None
+) -> list[discord.Embed]:
+    """Pagination dinamis 1–3 halaman sesuai §7:
+    - Hal.1: SELALU ada (info dasar + bacaan + arti + radikal ringkas)
+    - Hal.2: jukugo_contoh, hanya kalau terisi
+    - Hal.3: dekomposisi + kanji terkait + link referensi, kalau minimal
+      salah satu terisi
+
+    `dekomposisi_text` dihitung TERPISAH sebelum memanggil fungsi ini (lewat
+    `_build_dekomposisi_text()`, async — butuh query DB untuk lookup bacaan
+    tiap komponen pohon), bukan dihitung di dalam sini.
+    """
+    title = _entry_title(entry)
+    footer_text = _entry_footer(entry)
+    color = discord.Color.blurple()
+    if entry.get("joyo_status") == "TRUE":
+        color = discord.Color.gold()
 
     pages: list[discord.Embed] = []
 
-    # Halaman 1 -- selalu ada.
+    # --- Halaman 1: selalu ada ---
     page1 = discord.Embed(title=title, color=color)
+    info_dasar = _render_info_dasar(entry)
+    if info_dasar:
+        _add_long_field(page1, "ℹ️ Info Dasar", info_dasar)
+
     bacaan = _render_bacaan(entry)
-    arti = _render_arti(entry, arti_id)
-    radikal = _render_radikal(entry)
     if bacaan:
         _add_long_field(page1, "🔤 Bacaan", bacaan)
-    if arti:
-        _add_long_field(page1, "💬 Arti", arti)
+
+    if show_meaning:
+        arti = _render_arti(entry)
+        if arti:
+            _add_long_field(page1, "📚 Arti", arti)
+    else:
+        page1.add_field(
+            name="📚 Arti",
+            value="🔒 Upgrade Trial/Companion/Patron untuk lihat arti & detail lengkap.",
+            inline=False,
+        )
+
+    radikal = _render_radikal_ringkas(entry)
     if radikal:
         _add_long_field(page1, "🧩 Radikal", radikal)
-    if not (bacaan or arti or radikal):
-        page1.description = "Belum ada detail bacaan/arti/radikal untuk kanji ini di sumber data."
+
     pages.append(page1)
 
-    # Halaman 2 -- hanya kalau jukugo_contoh terisi.
-    jukugo = _render_jukugo(entry)
+    # --- Halaman 2: jukugo, kalau terisi ---
+    jukugo = _render_jukugo(entry) if show_meaning else None
     if jukugo:
         page2 = discord.Embed(title=title, color=color)
         _add_long_field(page2, "📝 Jukugo Contoh", jukugo)
         pages.append(page2)
 
-    # Halaman 3 -- hanya kalau minimal salah satu bagian ini terisi.
-    dekomposisi = _render_dekomposisi(entry)
-    terkait = _render_kanji_terkait(entry)
-    referensi = _render_referensi(entry)
-    if dekomposisi or terkait or referensi:
-        page3 = discord.Embed(title=title, color=color)
-        if dekomposisi:
-            _add_long_field(page3, "🔩 Dekomposisi Grafis", dekomposisi)
-        if terkait:
-            _add_long_field(page3, "🔗 Kanji Terkait", terkait)
-        if referensi:
-            _add_long_field(page3, "📎 Referensi", referensi)
-        pages.append(page3)
+    # --- Halaman 3: dekomposisi + kanji terkait + referensi ---
+    if show_meaning:
+        terkait = _render_kanji_terkait(entry)
+        referensi = _render_referensi(entry)
+
+        if dekomposisi_text or terkait or referensi:
+            page3 = discord.Embed(title=title, color=color)
+            if dekomposisi_text:
+                _add_long_field(page3, "🧱 Komponen Penyusun", dekomposisi_text)
+            if terkait:
+                _add_long_field(page3, "🔗 Kanji Terkait", terkait)
+            if referensi:
+                page3.add_field(name="🌐 Referensi", value=referensi, inline=False)
+            pages.append(page3)
 
     total = len(pages)
     for idx, page in enumerate(pages, start=1):
         parts = []
         if total > 1:
             parts.append(f"Halaman {idx}/{total}")
-        if footer:
-            parts.append(footer)
+        if footer_text:
+            parts.append(footer_text)
         if parts:
             page.set_footer(text=" • ".join(parts))
 
@@ -441,42 +661,35 @@ def _build_list_query(jlpt: Optional[str], joyo: Optional[str], kelas_sd: Option
     clauses = []
     params: list = []
     if jlpt:
-        clauses.append("jlpt_baru = ?")
+        clauses.append("k.jlpt_baru = ?")
         params.append(jlpt)
     if joyo:
-        clauses.append("joyo_status = ?")
-        params.append("TRUE" if joyo == "ya" else "FALSE")
+        clauses.append("k.joyo_status = ?")
+        params.append(joyo)
     if kelas_sd:
-        clauses.append("kyouiku_kelas_sd = ?")
+        clauses.append("k.kyouiku_kelas_sd = ?")
         params.append(kelas_sd)
 
-    query = GET_ALL_FOR_LIST_BASE
-    if clauses:
-        query += " WHERE " + " AND ".join(clauses)
-    query += " ORDER BY (jlpt_baru IS NULL), jlpt_baru ASC, jumlah_goresan ASC;"
-    return query, tuple(params)
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    order = " ORDER BY (k.jlpt_baru IS NULL OR k.jlpt_baru = ''), k.jumlah_goresan ASC, k.kanji ASC;"
+    return GET_ALL_FOR_LIST + where + order, tuple(params)
 
 
 def _list_title(jlpt: Optional[str], joyo: Optional[str], kelas_sd: Optional[str]) -> str:
-    filters = []
+    parts = []
     if jlpt:
-        filters.append(f"JLPT {jlpt}")
-    if joyo == "ya":
-        filters.append("Jōyō")
-    elif joyo == "tidak":
-        filters.append("Non-Jōyō")
+        parts.append(f"JLPT {jlpt}")
+    if joyo:
+        parts.append("Jōyō" if joyo == "TRUE" else "Non-Jōyō")
     if kelas_sd:
-        filters.append(f"Kelas {kelas_sd} SD")
-    if filters:
-        return f"📚 Kamus Kanji — {' · '.join(filters)}"
-    return "📚 Semua Entri Kamus Kanji"
+        parts.append(f"Kelas SD {kelas_sd}")
+    suffix = f" — {', '.join(parts)}" if parts else ""
+    return f"📖 Kamus Kanji{suffix}"
 
 
 def build_list_pages(
-    entries: list[dict], jlpt: Optional[str], joyo: Optional[str], kelas_sd: Optional[str],
-    show_meaning: bool = True,
+    entries: list[dict], title: str, show_meaning: bool = True
 ) -> tuple[list[discord.Embed], list[list[dict]]]:
-    title = _list_title(jlpt, joyo, kelas_sd)
     chunks = [entries[i:i + LIST_PAGE_SIZE] for i in range(0, len(entries), LIST_PAGE_SIZE)] or [[]]
     total_pages = len(chunks)
 
@@ -484,28 +697,33 @@ def build_list_pages(
     for idx, chunk in enumerate(chunks, start=1):
         lines = []
         for e in chunk:
-            kanji = e["kanji"]
             tags = []
-            if e.get("jlpt_baru"):
+            if e["jlpt_baru"]:
                 tags.append(e["jlpt_baru"])
-            if e.get("joyo_status") == "TRUE":
+            if e["joyo_status"] == "TRUE":
                 tags.append("Jōyō")
+            if e["kyouiku_kelas_sd"]:
+                tags.append(f"SD{e['kyouiku_kelas_sd']}")
             tag_str = f" `{' '.join(tags)}`" if tags else ""
-            header_line = f"**{kanji}**{tag_str}"
+            header = f"**{e['kanji']}**{tag_str}"
 
             if show_meaning:
-                meanings = _parse_list(e.get("meanings_en"))
-                meaning_preview = ", ".join(meanings[:3]) if meanings else "—"
-                lines.append(f"{header_line}\n{meaning_preview}")
+                meaning = e.get("arti_id")
+                if not _has_content(meaning):
+                    en_list = _load_list(e.get("meanings_en"))
+                    meaning = en_list[0] if en_list else "—"
+                if len(meaning) > 60:
+                    meaning = meaning[:57] + "..."
+                lines.append(f"{header}\n{meaning}")
             else:
-                lines.append(header_line)
+                lines.append(header)
 
         embed = discord.Embed(
             title=title,
             description="\n\n".join(lines) or "Tidak ada entri.",
             color=discord.Color.blurple(),
         )
-        footer = f"Halaman {idx}/{total_pages} • Total {len(entries)} kanji"
+        footer = f"Halaman {idx}/{total_pages} • Total {len(entries)} entri"
         if not show_meaning:
             footer += " • Arti terkunci, upgrade Companion untuk lihat detail"
         embed.set_footer(text=footer)
@@ -515,32 +733,11 @@ def build_list_pages(
 
 
 # ============================================================================
-# AUTOCOMPLETE
-# ============================================================================
-
-async def kanji_autocomplete(interaction: discord.Interaction, current_input: str):
-    bot: KotabiBot = interaction.client
-    current_input = current_input.strip()
-    if not current_input:
-        return []
-
-    rows = await bot.GET(SEARCH_QUERY, (current_input, current_input, current_input, current_input))
-    choices = []
-    for kanji, meanings_en_raw, jlpt_baru, joyo_status, _kelas, kanken in rows:
-        meanings = _parse_list(meanings_en_raw)
-        meaning_preview = meanings[0] if meanings else "—"
-        tag = jlpt_baru or ("Jōyō" if joyo_status == "TRUE" else "")
-        label = f"{kanji} ({tag}) — {meaning_preview}" if tag else f"{kanji} — {meaning_preview}"
-        choices.append(discord.app_commands.Choice(name=label[:100], value=kanji))
-    return choices[:25]
-
-
-# ============================================================================
 # PAGINATION VIEWS
 # ============================================================================
 
 class KanjiPaginatorView(discord.ui.View):
-    """View Prev/Next untuk mode detail (1-3 halaman dinamis)."""
+    """View Prev/Next generik untuk mode detail (1–3 halaman dinamis)."""
 
     def __init__(self, owner_id: int, pages: list[discord.Embed]):
         super().__init__(timeout=PAGINATOR_TIMEOUT_SECONDS)
@@ -553,10 +750,9 @@ class KanjiPaginatorView(discord.ui.View):
     def _sync_buttons(self):
         self.prev_button.disabled = self.index == 0
         self.next_button.disabled = self.index >= len(self.pages) - 1
-        # Kalau cuma 1 halaman (kanji minim data), sembunyikan tombol sama sekali.
-        self.prev_button.style = discord.ButtonStyle.secondary
-        if len(self.pages) <= 1:
-            self.clear_items()
+        # Kalau cuma 1 halaman, tombol tidak perlu ditampilkan sama sekali.
+        self.prev_button.disabled = self.prev_button.disabled or len(self.pages) <= 1
+        self.next_button.disabled = self.next_button.disabled or len(self.pages) <= 1
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.owner_id:
@@ -619,18 +815,19 @@ class KanjiListView(discord.ui.View):
 
         options = []
         for e in entries:
-            meanings = _parse_list(e.get("meanings_en"))
-            desc = (
-                ", ".join(meanings[:3]) if (self.show_meaning and meanings)
-                else "🔒 Upgrade Companion untuk lihat arti & detail" if not self.show_meaning
-                else "—"
-            )
-            options.append(
-                discord.SelectOption(label=e["kanji"][:100], description=desc[:100], value=e["kanji"])
-            )
+            desc = "🔒 Upgrade Companion untuk lihat arti & detail"
+            if self.show_meaning:
+                meaning = e.get("arti_id")
+                if not _has_content(meaning):
+                    en_list = _load_list(e.get("meanings_en"))
+                    meaning = en_list[0] if en_list else "—"
+                desc = meaning[:100]
+            options.append(discord.SelectOption(label=e["kanji"][:100], description=desc, value=e["kanji"]))
 
         select = discord.ui.Select(
-            placeholder="Pilih kanji untuk lihat detail lengkap...", options=options, row=0,
+            placeholder="Pilih kanji untuk lihat detail lengkap...",
+            options=options,
+            row=0,
         )
         select.callback = self._on_select
         self.add_item(select)
@@ -640,8 +837,8 @@ class KanjiListView(discord.ui.View):
             return await interaction.response.send_message("❌ Ini bukan pencarian kamu.", ephemeral=True)
 
         # Celah arsitektur yang sama seperti /bunpou & /kotoba: dropdown ini
-        # interaksi komponen, bukan slash command baru -- access check WAJIB
-        # dicek ulang di sini, bukan cuma diwariskan dari command awal.
+        # interaksi komponen, bukan slash command baru — access check WAJIB
+        # dicek ulang di sini.
         if not has_dic_access(interaction.user, interaction.guild_id):
             return await interaction.response.send_message(MSG_DIC_DETAIL_ONLY, ephemeral=True)
 
@@ -652,10 +849,8 @@ class KanjiListView(discord.ui.View):
             return await interaction.response.send_message("❌ Entri tidak ditemukan lagi.", ephemeral=True)
 
         entry = _row_to_dict(row)
-        arti_row = await bot.GET_ONE(GET_ARTI_ID, (kanji,))
-        arti_id = arti_row[0] if arti_row else None
-
-        detail_pages = build_detail_pages(entry, arti_id)
+        dekomposisi_text = await _build_dekomposisi_text(bot, entry)
+        detail_pages = build_detail_pages(entry, show_meaning=True, dekomposisi_text=dekomposisi_text)
         for p in detail_pages:
             _add_requester_info(p, interaction.user)
 
@@ -701,21 +896,40 @@ class Kanji(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
+        # Migration guard: kalau ada tabel peninggalan percobaan load
+        # sebelumnya dengan skema berbeda (mis. kolom belum lengkap),
+        # `CREATE TABLE IF NOT EXISTS` TIDAK akan menimpanya, dan
+        # CREATE_INDEXES di bawah bisa gagal dengan "no such column".
+        # Drop dulu supaya aman — datanya toh selalu di-full-replace dari
+        # CSV di load_csv() setelah ini, jadi tidak ada data yang hilang.
+        await self.bot.RUN(f"DROP TABLE IF EXISTS {TABLE_NAME};")
+        await self.bot.RUN(f"DROP TABLE IF EXISTS {MEANINGS_TABLE};")
+
         await self.bot.RUN(CREATE_TABLE)
         await self.bot.RUN(CREATE_MEANINGS_TABLE)
+        for index_query in CREATE_INDEXES:
+            await self.bot.RUN(index_query)
         await self.load_csv()
-        await self.load_meanings_csv()
 
     async def load_csv(self):
-        """kanji_master.csv -- CSV standar koma+quote RFC4180, header baris
-        pertama langsung (BEDA dari bunpou/kotoba yang tab-delimited & bisa
-        punya baris #separator:Tab opsional -- lihat modul docstring)."""
+        """Full-replace kanji_entries dari kanji_master.csv DAN kanji_meanings_id
+        dari kanji_meanings_id.csv — keduanya sumber kebenaran penuh tiap
+        reload (§5), bukan upsert parsial.
+
+        kanji_master.csv adalah CSV comma-delimited BIASA (bukan format Anki
+        tab-delimited seperti bunpou/kotoba) — TIDAK ada baris #separator
+        yang perlu dilewati.
+        """
+        await self._load_kanji_master()
+        await self._load_meanings_id()
+
+    async def _load_kanji_master(self):
         if not os.path.exists(CSV_PATH):
             _log.warning("⚠️ File %s tidak ditemukan. Kamus kanji kosong.", CSV_PATH)
             return
 
         with open(CSV_PATH, "r", encoding="utf-8", newline="") as f:
-            reader = csv.DictReader(f)  # delimiter default koma
+            reader = csv.DictReader(f)
             header = reader.fieldnames or []
             if header != FIELD_NAMES:
                 _log.error(
@@ -728,66 +942,58 @@ class Kanji(commands.Cog):
 
             rows = [tuple(row.get(col, "") for col in FIELD_NAMES) for row in reader]
 
-        await self.bot.RUN(DELETE_ALL)
+        await self.bot.RUN(DELETE_ALL_ENTRIES)
         if rows:
             await self.bot.RUN_MANY(INSERT_ENTRY, rows)
 
         _log.info("✅ %d entri kanji dimuat dari %s.", len(rows), CSV_PATH)
 
-    async def load_meanings_csv(self):
-        """kanji_meanings_id.csv -- overlay terjemahan Indonesia, BOLEH KOSONG
-        (cuma header). Full replace juga, supaya edit manual langsung kepakai
-        setelah /kanji_reload."""
-        if not os.path.exists(MEANINGS_CSV_PATH):
+    async def _load_meanings_id(self):
+        if not os.path.exists(MEANINGS_ID_CSV_PATH):
             _log.warning(
-                "⚠️ File %s tidak ditemukan. Arti Bahasa Indonesia akan fallback "
-                "ke meanings_en/meaning_jp untuk semua kanji.", MEANINGS_CSV_PATH,
+                "⚠️ File %s tidak ditemukan. Overlay arti_id kosong (fallback ke EN/JP).",
+                MEANINGS_ID_CSV_PATH,
             )
+            await self.bot.RUN(DELETE_ALL_MEANINGS)
             return
 
-        with open(MEANINGS_CSV_PATH, "r", encoding="utf-8", newline="") as f:
+        with open(MEANINGS_ID_CSV_PATH, "r", encoding="utf-8", newline="") as f:
             reader = csv.DictReader(f)
             header = reader.fieldnames or []
             if header != ["kanji", "arti_id"]:
                 _log.error(
-                    "❌ Header %s harus persis 'kanji,arti_id' — pemuatan overlay "
-                    "terjemahan dibatalkan. Header ditemukan: %s",
-                    MEANINGS_CSV_PATH, header,
+                    "❌ Header %s harus persis 'kanji,arti_id' — pemuatan overlay dibatalkan. "
+                    "Header ditemukan: %s",
+                    MEANINGS_ID_CSV_PATH, header,
                 )
                 return
 
             rows = [
-                (row.get("kanji", ""), row.get("arti_id", ""))
+                (row.get("kanji", "").strip(), row.get("arti_id", ""))
                 for row in reader
-                if row.get("kanji") and row.get("arti_id")
+                if row.get("kanji", "").strip()
             ]
 
         await self.bot.RUN(DELETE_ALL_MEANINGS)
         if rows:
             await self.bot.RUN_MANY(INSERT_MEANING, rows)
 
-        _log.info(
-            "✅ %d terjemahan Indonesia dimuat dari %s (dari total kanji di database).",
-            len(rows), MEANINGS_CSV_PATH,
-        )
+        _log.info("✅ %d overlay arti_id dimuat dari %s.", len(rows), MEANINGS_ID_CSV_PATH)
 
     @discord.app_commands.command(
         name="kanji",
-        description="Cari kanji di kamus, atau jelajahi berdasarkan level JLPT/Jōyō/kelas SD.",
+        description="Cari kanji di kamus, atau jelajahi berdasarkan JLPT/Jōyō/kelas SD.",
     )
     @discord.app_commands.describe(
-        kanji="Ketik karakter kanji, bacaan on/kun, atau arti Inggris. Kalau diisi, filter lain diabaikan untuk mode detail.",
+        kanji="Ketik karakter kanji, bacaan, atau arti. Kalau diisi, filter lain diabaikan untuk mode detail.",
         jlpt="Filter berdasarkan level JLPT (opsional).",
-        joyo="Filter berdasarkan status Jōyō Kanji resmi (opsional).",
-        kelas_sd="Filter berdasarkan kelas SD Kyōiku Kanji (opsional).",
+        joyo="Filter berdasarkan status Jōyō Kanji (opsional).",
+        kelas_sd="Filter berdasarkan kelas SD (opsional).",
     )
     @discord.app_commands.choices(
         jlpt=[discord.app_commands.Choice(name=lvl, value=lvl) for lvl in JLPT_CHOICES],
-        joyo=[
-            discord.app_commands.Choice(name="Ya (Jōyō)", value="ya"),
-            discord.app_commands.Choice(name="Tidak (Non-Jōyō)", value="tidak"),
-        ],
-        kelas_sd=[discord.app_commands.Choice(name=f"Kelas {k} SD", value=k) for k in KELAS_SD_CHOICES],
+        joyo=[discord.app_commands.Choice(name=name, value=value) for name, value in JOYO_CHOICES],
+        kelas_sd=[discord.app_commands.Choice(name=f"Kelas {k}", value=k) for k in KELAS_SD_CHOICES],
     )
     @discord.app_commands.autocomplete(kanji=kanji_autocomplete)
     @discord.app_commands.guild_only()
@@ -799,30 +1005,29 @@ class Kanji(commands.Cog):
         joyo: Optional[str] = None,
         kelas_sd: Optional[str] = None,
     ):
-        # Mode list terbuka untuk semua role (termasuk Drifter) -- access
-        # check detail dicek eksplisit di sini DAN di KanjiListView._on_select
-        # (celah dropdown, sama seperti /bunpou & /kotoba).
+        # Command TIDAK di-gate akses secara keseluruhan — mode list terbuka
+        # untuk semua role (termasuk Drifter). Access check detail dicek
+        # eksplisit di sini DAN di KanjiListView._on_select (celah dropdown).
         await interaction.response.defer(ephemeral=True)
 
         # Mode detail: kanji diisi.
         if kanji:
-            if not has_dic_access(interaction.user, interaction.guild_id):
+            has_access = has_dic_access(interaction.user, interaction.guild_id)
+            if not has_access:
                 await interaction.followup.send(MSG_DIC_DETAIL_ONLY, ephemeral=True)
                 return
 
             row = await self.bot.GET_ONE(GET_ENTRY, (kanji,))
             if not row:
                 await interaction.followup.send(
-                    "❌ Kanji tidak ditemukan. Gunakan menu autocomplete saat mengetik.",
+                    "❌ Kanji tidak ditemukan di kamus. Gunakan menu autocomplete saat mengetik.",
                     ephemeral=True,
                 )
                 return
 
             entry = _row_to_dict(row)
-            arti_row = await self.bot.GET_ONE(GET_ARTI_ID, (kanji,))
-            arti_id = arti_row[0] if arti_row else None
-
-            pages = build_detail_pages(entry, arti_id)
+            dekomposisi_text = await _build_dekomposisi_text(self.bot, entry)
+            pages = build_detail_pages(entry, show_meaning=True, dekomposisi_text=dekomposisi_text)
             for p in pages:
                 _add_requester_info(p, interaction.user)
 
@@ -831,7 +1036,7 @@ class Kanji(commands.Cog):
             view.message = message
             return
 
-        # Mode list/browse: filter jlpt/joyo/kelas_sd / kosong semua.
+        # Mode list/browse: kombinasi filter jlpt/joyo/kelas_sd, atau kosong.
         query, params = _build_list_query(jlpt, joyo, kelas_sd)
         rows = await self.bot.GET(query, params)
 
@@ -843,13 +1048,15 @@ class Kanji(commands.Cog):
 
         entries = [
             {
-                "kanji": r[0], "meanings_en": r[1], "jlpt_baru": r[2],
-                "joyo_status": r[3], "kyouiku_kelas_sd": r[4], "kanken_kyu_resmi": r[5],
+                "kanji": r[0], "jlpt_baru": r[1], "joyo_status": r[2],
+                "kyouiku_kelas_sd": r[3], "kanken_kyu_resmi": r[4],
+                "meanings_en": r[5], "arti_id": r[6],
             }
             for r in rows
         ]
         show_meaning = has_dic_access(interaction.user, interaction.guild_id)
-        pages, page_entries = build_list_pages(entries, jlpt, joyo, kelas_sd, show_meaning=show_meaning)
+        title = _list_title(jlpt, joyo, kelas_sd)
+        pages, page_entries = build_list_pages(entries, title, show_meaning=show_meaning)
         for p in pages:
             _add_requester_info(p, interaction.user)
 
@@ -857,24 +1064,18 @@ class Kanji(commands.Cog):
         message = await interaction.followup.send(embed=pages[0], view=view, ephemeral=True, wait=True)
         view.message = message
 
-    @discord.app_commands.command(
-        name="kanji_reload",
-        description="Muat ulang kamus kanji (kanji_master.csv + kanji_meanings_id.csv) dari CSV (Khusus Admin).",
-    )
+    @discord.app_commands.command(name="kanji_reload", description="Muat ulang kamus kanji dari CSV (Khusus Admin).")
     @discord.app_commands.default_permissions(administrator=True)
     async def kanji_reload(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         await self.load_csv()
-        await self.load_meanings_csv()
-
-        total_row = await self.bot.GET_ONE(f"SELECT COUNT(*) FROM {TABLE_NAME};")
-        total_arti_row = await self.bot.GET_ONE(f"SELECT COUNT(*) FROM {MEANINGS_TABLE};")
-        total = total_row[0] if total_row else 0
-        total_arti = total_arti_row[0] if total_arti_row else 0
-
+        count_row = await self.bot.GET_ONE(f"SELECT COUNT(*) FROM {TABLE_NAME};")
+        total = count_row[0] if count_row else 0
+        meanings_row = await self.bot.GET_ONE(f"SELECT COUNT(*) FROM {MEANINGS_TABLE};")
+        total_meanings = meanings_row[0] if meanings_row else 0
         await interaction.followup.send(
             f"✅ Kamus kanji dimuat ulang. Total entri: **{total}** "
-            f"(**{total_arti}** sudah punya terjemahan Indonesia).",
+            f"(overlay arti_id terisi: **{total_meanings}**).",
             ephemeral=True,
         )
 
