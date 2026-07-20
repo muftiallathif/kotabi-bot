@@ -344,7 +344,7 @@ class DynamicQuizMenu(discord.ui.DynamicItem[discord.ui.Select[discord.ui.View]]
         # blokir kalau kuis ini memang bukan open_to_drifter.
         is_vip = has_vip_role(member, interaction.guild_id)
         if not is_vip and not quiz_data.get("open_to_drifter", False):
-            await interaction.followup.send(Msg.GATEKEEPER_VIP_ONLY, ephemeral=True)
+            await interaction.followup.send(Msg.GATEKEEPER_VIP_ONLY(), ephemeral=True)
             return
 
         rank_has_cooldown = await self.levelup.rank_has_cooldown(interaction.guild.id, rank)

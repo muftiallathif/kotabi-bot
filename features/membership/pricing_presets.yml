@@ -1,0 +1,39 @@
+# features/membership/pricing_presets.yml — Satu-satunya Sumber Harga Tier VIP
+# ================================================================================
+# GANTI HANYA `active_preset` di bawah ini untuk mengubah harga Traveler,
+# Companion, dan Patron di SELURUH bot (produk /subscribe, teks penolakan
+# akses VIP_ONLY/PREMIUM_ONLY, gating kamus, /info member-reguler).
+#
+# JANGAN ubah angka di dalam `presets:` kecuali memang mau redefinisikan
+# opsi itu sendiri (bukan cuma pindah opsi). Untuk pindah opsi harga,
+# cukup ganti active_preset.
+#
+# Setelah diubah: commit + restart bot. Tidak ada file lain yang perlu
+# disentuh untuk sekadar ganti harga — lihat PRICING_SYSTEM_REFACTOR.md
+# untuk daftar lengkap file yang MEMBACA (bukan menyimpan) dari sini.
+
+active_preset: 1   # <- ubah angka ini (1-6) untuk ganti harga aktif
+
+presets:
+  1: { traveler: 18000, companion: 35000, patron: 200000 }
+  2: { traveler: 22000, companion: 45000, patron: 250000 }
+  3: { traveler: 27000, companion: 55000, patron: 300000 }
+  4: { traveler: 30000, companion: 60000, patron: 350000 }
+  5: { traveler: 35000, companion: 70000, patron: 400000 }
+  6: { traveler: 40000, companion: 80000, patron: 450000 }   # = harga normal (target akhir)
+
+# Rumus varian durasi panjang, diterapkan ke harga bulanan preset AKTIF.
+# 6 bulan = bayar 5 bulan, dapat 6 (~17% off). 1 tahun = bayar 10 bulan,
+# dapat 12 (~17% off). Ubah pengali di sini kalau mau diskon beda,
+# TIDAK perlu isi manual per preset.
+duration_multipliers:
+  6_month: 5
+  12_month: 10
+
+# Poin lifetime per bulan per tier (dipakai hitung amount poin untuk
+# varian 6bln/1thn secara otomatis: amount = poin_per_bulan x jumlah_bulan).
+# Harus tetap sinkron dengan features/membership/products.yml (produk
+# bulanan traveler/companion) dan membership_settings.yml (lifetime.point_threshold).
+points_per_month:
+  traveler: 1
+  companion: 2

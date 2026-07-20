@@ -11,28 +11,67 @@ kecil dan aman diikutsertakan di upload fitur manapun.
 
 Penggunaan:
     from shared.messages import Msg
-    await interaction.response.send_message(Msg.VIP_ONLY, ephemeral=True)
+    await interaction.response.send_message(Msg.VIP_ONLY(), ephemeral=True)
+
+⚠️ PERUBAHAN PENTING (lihat PRICING_SYSTEM_REFACTOR.md Tahap 4):
+VIP_ONLY, PREMIUM_ONLY, dan GATEKEEPER_VIP_ONLY DULU konstanta string
+(dipanggil tanpa kurung: `Msg.VIP_ONLY`). SEKARANG method — WAJIB
+dipanggil DENGAN kurung: `Msg.VIP_ONLY()`. Ini supaya harga yang
+ditampilkan selalu ikut preset aktif di pricing_presets.yml, bukan
+angka beku saat modul di-import.
+
+Semua caller lama yang masih akses tanpa kurung HARUS diupdate,
+kalau tidak akan mengirim representasi function object ke Discord
+(error runtime, bukan silent bug — jadi akan langsung ketahuan saat
+dites). Lihat log Tahap 4 di PRICING_SYSTEM_REFACTOR.md untuk daftar
+lengkap file lain yang perlu ikut diupdate.
 """
+
+from shared.config import get_active_prices
 
 
 class Msg:
 
     # --- Access Control ---
-    VIP_ONLY = (
-        "❌ Fitur ini hanya tersedia untuk **member VIP** Kotabi Japanese.\n\n"
-        "🎒 **Traveler** — Rp40.000 / bulan\n"
-        "🤝 **Companion** — Rp80.000 / bulan\n"
-        "👑 **Patron** — Seumur hidup\n\n"
-        "Hubungi staf untuk mendaftar! 🙇‍♂️"
-    )
 
-    PREMIUM_ONLY = (
-        "❌ Fitur ini hanya tersedia untuk **member berbayar** (bukan Trial).\n\n"
-        "🎒 **Traveler** — Rp40.000 / bulan\n"
-        "🤝 **Companion** — Rp80.000 / bulan\n\n"
-        "Hubungi staf untuk mendaftar! 🙇‍♂️"
-    )
-    
+    @staticmethod
+    def _format_rp(amount: int) -> str:
+        """Format angka rupiah jadi 'Rp80.000'. Helper internal, dipakai
+        method harga di bawah supaya format konsisten satu tempat."""
+        return f"Rp{amount:,}".replace(",", ".")
+
+    @staticmethod
+    def VIP_ONLY() -> str:
+        prices = get_active_prices()
+        return (
+            "❌ Fitur ini hanya tersedia untuk **member VIP** Kotabi Japanese.\n\n"
+            f"🎒 **Traveler** — {Msg._format_rp(prices['traveler']['monthly'])} / bulan\n"
+            f"🤝 **Companion** — {Msg._format_rp(prices['companion']['monthly'])} / bulan\n"
+            "👑 **Patron** — Seumur hidup\n\n"
+            "Hubungi staf untuk mendaftar! 🙇‍♂️"
+        )
+
+    @staticmethod
+    def PREMIUM_ONLY() -> str:
+        prices = get_active_prices()
+        return (
+            "❌ Fitur ini hanya tersedia untuk **member berbayar** (bukan Trial).\n\n"
+            f"🎒 **Traveler** — {Msg._format_rp(prices['traveler']['monthly'])} / bulan\n"
+            f"🤝 **Companion** — {Msg._format_rp(prices['companion']['monthly'])} / bulan\n\n"
+            "Hubungi staf untuk mendaftar! 🙇‍♂️"
+        )
+
+    @staticmethod
+    def GATEKEEPER_VIP_ONLY() -> str:
+        prices = get_active_prices()
+        return (
+            "❌ Sistem ujian kasta hanya tersedia untuk **member VIP**.\n\n"
+            f"🎒 **Traveler** — {Msg._format_rp(prices['traveler']['monthly'])} / bulan\n"
+            f"🤝 **Companion** — {Msg._format_rp(prices['companion']['monthly'])} / bulan\n"
+            "👑 **Patron** — Seumur hidup\n\n"
+            "Hubungi staf untuk mendaftar! 🙇‍♂️"
+        )
+
     PATRON_ALREADY_LIFETIME = (
         "👑 Kamu sudah menjadi **Patron (Lifetime)** dan mendapat akses penuh selamanya.\n"
         "Tidak perlu berlangganan lagi!"
@@ -120,15 +159,6 @@ class Msg:
     KNEEL_INVALID_GUILD_ID  = "❌ ID Server tidak valid! Pastikan Anda memasukkan deretan angka."
     KNEEL_LEADERBOARD_TITLE = "🏆 Papan Peringkat Sujud Hormat (Berlutut)"
     KNEEL_PERSONAL_FIELD    = "🛡️ Sujud Hormat Anda"
-
-    # --- Gatekeeper ---
-    GATEKEEPER_VIP_ONLY = (
-        "❌ Sistem ujian kasta hanya tersedia untuk **member VIP**.\n\n"
-        "🎒 **Traveler** — Rp40.000 / bulan\n"
-        "🤝 **Companion** — Rp80.000 / bulan\n"
-        "👑 **Patron** — Seumur hidup\n\n"
-        "Hubungi staf untuk mendaftar! 🙇‍♂️"
-    )
 
     @staticmethod
     def log_amount_exceeded(limit: int, media_type: str) -> str:

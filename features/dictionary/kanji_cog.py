@@ -398,7 +398,14 @@ def _collect_tree_col1(
     kontinuasi (buat ditempeli arti di kolom 2). Kolom 1 TIDAK py bacaan/arti
     sama sekali -- itu sepenuhnya urusan kolom 2, dirakit terpisah di
     _render_dekomposisi_tree() supaya lebar kolom 1 bisa dihitung dulu
-    sebelum kolom 2 ditempel (perataan butuh tahu lebar maksimum duluan)."""
+    sebelum kolom 2 ditempel (perataan butuh tahu lebar maksimum duluan).
+
+    PENTING soal bar "│" di baris kontinuasi (baris ke-2 tiap node): itu
+    HARUS ditentukan oleh "apakah node ini py children sendiri" (supaya
+    keliatan nyambung turun ke anaknya), BUKAN oleh "apakah node ini py
+    sibling setelahnya" (itu urusan child_prefix, dipakai buat prefix
+    SEMUA baris di bawahnya, sudah benar dari awal). Dua hal ini kepisah --
+    sempat salah kepake gara-gara nyangka keduanya sama."""
     if out is None:
         out = []
     if node_count is None:
@@ -410,26 +417,25 @@ def _collect_tree_col1(
         return out
 
     char = node.get("element")
+    children = node.get("g", [])
+    has_children = bool(children)
     node_count[0] += 1
 
     if is_root:
         out.append((char or "？", char))
         child_prefix = ""
-        # Baris kontinuasi root selalu pakai "│" -- root dianggap selalu
-        # "berlanjut" ke children-nya (lihat diskusi format, root tidak py
-        # sibling jadi is_last tidak relevan untuknya).
-        out.append(("│", None))
     else:
         connector = "└─ " if is_last else "├─ "
         out.append((prefix + connector + (char or "？"), char))
         child_prefix = prefix + ("   " if is_last else "│  ")
-        # Baris kontinuasi node non-root = child_prefix apa adanya (yang
-        # dipakai buat rekursi ke children-nya) -- otomatis py "│" di ujung
-        # kalau node ini py sibling setelahnya (is_last=False), dan polos
-        # spasi kalau node ini yang terakhir di levelnya.
-        out.append((child_prefix, None))
 
-    children = node.get("g", [])
+    # Baris kontinuasi = child_prefix (buat nyambungin garis cabang dari
+    # level di atas) + "│" TAMBAHAN kalau node ini py children (nyambung
+    # ke anaknya sendiri) -- kalau leaf/nggak py children, nggak perlu bar
+    # tambahan sama sekali di situ.
+    cont_line = child_prefix + ("│" if has_children else "")
+    out.append((cont_line, None))
+
     for i, child in enumerate(children):
         _collect_tree_col1(
             child, child_prefix, i == len(children) - 1, False,

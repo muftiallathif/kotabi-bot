@@ -6,9 +6,11 @@ SINGLE SOURCE OF TRUTH untuk semua ID dan konfigurasi umum.
 Semua fitur cukup import dari sini. Jangan hardcode ID di cog manapun.
 
 Penggunaan:
-    from shared.config import get_role_id, get_channel_id, get_vip_role_ids
+    from shared.config import get_role_id, get_channel_id, get_vip_role_ids, get_active_prices
 
 Jika ada perubahan role/channel ID -> cukup edit shared/server_map.yml, selesai.
+Jika ada perubahan HARGA tier VIP -> cukup edit features/membership/pricing_presets.yml
+(ganti active_preset), selesai. Lihat PRICING_SYSTEM_REFACTOR.md.
 """
 
 import os
@@ -20,6 +22,7 @@ logger = logging.getLogger("bot.config")
 
 CONFIG_PATH = "shared/server_map.yml"
 MEMBERSHIP_PATH = "features/membership/membership_settings.yml"
+PRICING_PRESETS_PATH = "features/membership/pricing_presets.yml"
 
 # ============================================================================
 # INTERNAL CACHE
@@ -27,6 +30,7 @@ MEMBERSHIP_PATH = "features/membership/membership_settings.yml"
 
 _server_map: dict = {}
 _membership_cfg: dict = {}
+_pricing_presets_cfg: dict = {}
 
 
 def _load_server_map() -> dict:
@@ -62,13 +66,31 @@ def _load_membership_cfg() -> dict:
     return _membership_cfg
 
 
+def _load_pricing_presets() -> dict:
+    global _pricing_presets_cfg
+    if _pricing_presets_cfg:
+        return _pricing_presets_cfg
+    if not os.path.exists(PRICING_PRESETS_PATH):
+        logger.warning(f"⚠️ File {PRICING_PRESETS_PATH} tidak ditemukan!")
+        return {}
+    try:
+        with open(PRICING_PRESETS_PATH, "r", encoding="utf-8") as f:
+            _pricing_presets_cfg = yaml.safe_load(f) or {}
+    except Exception as e:
+        logger.error(f"❌ Gagal memuat {PRICING_PRESETS_PATH}: {e}")
+        return {}
+    return _pricing_presets_cfg
+
+
 def reload_config():
     """Paksa reload semua config dari disk. Panggil jika YAML diubah saat runtime."""
-    global _server_map, _membership_cfg
+    global _server_map, _membership_cfg, _pricing_presets_cfg
     _server_map = {}
     _membership_cfg = {}
+    _pricing_presets_cfg = {}
     _load_server_map()
     _load_membership_cfg()
+    _load_pricing_presets()
     logger.info("✅ Semua config berhasil di-reload dari disk.")
 
 
@@ -146,6 +168,11 @@ def get_tier_info(tier_name: str) -> dict:
     selalu return {} karena kode lama cuma cari di cfg["roles"], padahal data
     Patron ada di cfg["lifetime"] (sejajar, bukan child dari "roles"). Sekarang
     "patron" di-redirect ke situ.
+
+    CATATAN: field `price_rp` di sini adalah snapshot lama/statis, TIDAK
+    otomatis ikut preset harga aktif. Untuk harga yang benar-benar berlaku
+    sekarang, pakai get_active_prices() — lihat PRICING_SYSTEM_REFACTOR.md
+    bagian 4.7 soal rencana field ini ke depan.
     """
     cfg = _load_membership_cfg()
     if tier_name == "patron":
@@ -161,6 +188,75 @@ def get_lifetime_threshold() -> int:
     """
     cfg = _load_membership_cfg()
     return int(cfg.get("lifetime", {}).get("point_threshold", 30))
+
+
+# ============================================================================
+# PRICING HELPERS
+# ============================================================================
+
+def get_active_prices() -> dict:
+    """
+    Satu-satunya fungsi yang boleh dipanggil tempat lain untuk tahu harga
+    tier VIP saat ini (Traveler/Companion/Patron, termasuk varian 6 bulan
+    dan 1 tahun). Baca features/membership/pricing_presets.yml, resolve
+    preset aktif (`active_preset`), lalu hitung otomatis harga 6bln/1thn
+    dari `duration_multipliers` — TIDAK ada angka harga kedua yang
+    di-hardcode di sini atau di tempat lain manapun.
+
+    Return:
+        {
+            "preset": int,  # nomor preset aktif (0 = fallback, lihat bawah)
+            "patron": int,
+            "traveler": {
+                "monthly": int, "6mo": int, "12mo": int,
+                "points_6mo": int, "points_12mo": int,
+            },
+            "companion": {
+                "monthly": int, "6mo": int, "12mo": int,
+                "points_6mo": int, "points_12mo": int,
+            },
+        }
+
+    Kalau pricing_presets.yml tidak ada / active_preset tidak valid,
+    fallback ke harga normal (Traveler 40rb, Companion 80rb, Patron 449rb)
+    supaya bot tidak crash total kalau file preset bermasalah — preset
+    hasil fallback ditandai dengan "preset": 0 (bukan 1-6 asli), berguna
+    untuk logging/debug kalau harga yang tampil di bot kelihatan aneh.
+    """
+    cfg = _load_pricing_presets()
+
+    FALLBACK_PRESET = {"traveler": 40000, "companion": 80000, "patron": 449000}
+    FALLBACK_MULTIPLIERS = {"6_month": 5, "12_month": 10}
+    FALLBACK_POINTS = {"traveler": 1, "companion": 2}
+
+    active_preset_num = cfg.get("active_preset")
+    presets = cfg.get("presets", {})
+    preset = presets.get(active_preset_num)
+
+    if not preset:
+        logger.warning(
+            f"⚠️ active_preset {active_preset_num!r} tidak ditemukan di "
+            f"pricing_presets.yml, fallback ke harga normal."
+        )
+        preset = FALLBACK_PRESET
+        active_preset_num = 0  # menandakan fallback, bukan preset asli 1-6
+
+    multipliers = cfg.get("duration_multipliers") or FALLBACK_MULTIPLIERS
+    points_per_month = cfg.get("points_per_month") or FALLBACK_POINTS
+
+    result = {"preset": active_preset_num, "patron": preset["patron"]}
+
+    for tier in ("traveler", "companion"):
+        monthly = preset[tier]
+        result[tier] = {
+            "monthly": monthly,
+            "6mo": monthly * multipliers["6_month"],
+            "12mo": monthly * multipliers["12_month"],
+            "points_6mo": points_per_month[tier] * 6,
+            "points_12mo": points_per_month[tier] * 12,
+        }
+
+    return result
 
 
 # ============================================================================

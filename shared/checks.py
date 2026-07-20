@@ -109,7 +109,9 @@ def is_vip():
             return False
         if has_vip_role(member, interaction.guild_id):
             return True
-        await interaction.response.send_message(Msg.VIP_ONLY, ephemeral=True)
+        # ⚠️ Tahap 4: VIP_ONLY sekarang method, WAJIB pakai kurung () —
+        # lihat catatan di shared/messages.py.
+        await interaction.response.send_message(Msg.VIP_ONLY(), ephemeral=True)
         return False
     return app_commands.check(predicate)
 
@@ -122,7 +124,8 @@ def is_premium():
             return False
         if has_premium_role(member, interaction.guild_id):
             return True
-        await interaction.response.send_message(Msg.PREMIUM_ONLY, ephemeral=True)
+        # ⚠️ Tahap 4: PREMIUM_ONLY sekarang method, WAJIB pakai kurung ().
+        await interaction.response.send_message(Msg.PREMIUM_ONLY(), ephemeral=True)
         return False
     return app_commands.check(predicate)
 
@@ -149,6 +152,9 @@ MSG_DIC_DETAIL_ONLY = (
     "👑 **Patron** — Seumur hidup\n\n"
     "Hubungi staf untuk upgrade! 🙇‍♂️"
 )
+# ⚠️ Tahap 5 (belum dikerjakan): MSG_DIC_DETAIL_ONLY di atas MASIH angka
+# statis (Rp80.000). Akan diubah jadi method dinamis seperti VIP_ONLY di
+# Tahap 5 — lihat PRICING_SYSTEM_REFACTOR.md.
 
 
 def has_dic_access(member: discord.Member, guild_id: int = None) -> bool:
