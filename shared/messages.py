@@ -20,11 +20,12 @@ dipanggil DENGAN kurung: `Msg.VIP_ONLY()`. Ini supaya harga yang
 ditampilkan selalu ikut preset aktif di pricing_presets.yml, bukan
 angka beku saat modul di-import.
 
-Semua caller lama yang masih akses tanpa kurung HARUS diupdate,
-kalau tidak akan mengirim representasi function object ke Discord
-(error runtime, bukan silent bug — jadi akan langsung ketahuan saat
-dites). Lihat log Tahap 4 di PRICING_SYSTEM_REFACTOR.md untuk daftar
-lengkap file lain yang perlu ikut diupdate.
+⚠️ TAHAP 7: AUTHORIZED_ONLY ditambahkan di bawah — constant ini DULU
+dipanggil di shared/checks.py (is_authorized()) tapi TIDAK PERNAH
+didefinisikan di file ini (bug lama, ada sebelum refactor pricing ini,
+ketemu tidak sengaja saat Tahap 4). Sekarang sudah ada, dipanggil
+TANPA kurung seperti konstanta biasa (bukan method, tidak bergantung
+harga).
 """
 
 from shared.config import get_active_prices
@@ -76,6 +77,13 @@ class Msg:
         "👑 Kamu sudah menjadi **Patron (Lifetime)** dan mendapat akses penuh selamanya.\n"
         "Tidak perlu berlangganan lagi!"
     )
+
+    # AUTHORIZED_ONLY — BARU (Tahap 7). Dipakai is_authorized() di
+    # shared/checks.py, untuk command yang butuh AUTHORIZED_USER_IDS atau
+    # Administrator (beda dari STAFF_ONLY yang untuk role Royal Guard/
+    # Prime Minister biasa — is_authorized() itu tingkatan lebih tinggi,
+    # dipakai command sensitif seperti /permission dan /structure).
+    AUTHORIZED_ONLY = "❌ Perintah ini hanya dapat digunakan oleh pengguna dengan otorisasi khusus (Admin/Authorized User)."
 
     STAFF_ONLY      = "❌ Anda tidak memiliki wewenang untuk menggunakan perintah ini."
     GUILD_ONLY      = "❌ Perintah ini hanya dapat digunakan di dalam server."

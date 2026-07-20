@@ -17,19 +17,14 @@ kelas-intensif: |
   Detail biaya, jadwal, dan silabus tiap kelas bisa berbeda-beda — silakan
   hubungi admin untuk info kelas yang sedang dibuka dan harga terbarunya!
 
-member-reguler: |
-  Paket Membership Kotabi Japanese
-
-  🎒 Traveler — Rp40.000 / bulan
-  • Akses immersion-log, quiz-rank-up, kamus bot, Member Area.
-
-  🤝 Companion — Rp80.000 / bulan
-  • Semua keuntungan Traveler + akses ekosistem premium penuh.
-
-  👑 Patron (Lifetime) — Otomatis setelah 60 poin kumulatif, atau beli langsung Rp449.000.
-  • Akses permanen tanpa biaya tambahan selamanya.
-
-  Hubungi admin untuk informasi lebih lanjut!
+# CATATAN (PRICING_SYSTEM_REFACTOR.md Tahap 6): key "member-reguler" yang
+# dulu ada di sini SUDAH DIPINDAH ke features/social/info_cog.py
+# (DYNAMIC_INFO_BUILDERS) — supaya harga & threshold poin Patron yang
+# ditampilkan selalu ikut pricing_presets.yml aktif, bukan angka statis
+# yang ditulis manual di file ini dan gampang basi (bug lama: pernah
+# tertulis "60 poin" padahal sistem sudah lama pakai 24 — lihat log
+# Tahap 6). JANGAN tambahkan lagi key "member-reguler" di sini, edit
+# _build_member_reguler_text() di info_cog.py kalau mau ubah teksnya.
 
 rank-guide: |
   Kasta menunjukkan level kemampuan bahasa Jepangmu.

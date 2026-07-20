@@ -11,21 +11,26 @@ membership:
       name: "【旅籠】 Trial Membership"
       role_id: 1518029306469548202
       duration_days: 5
-      price_rp: 0
       points: 0
+      # price_rp DIHAPUS (PRICING_SYSTEM_REFACTOR.md Tahap 7): field ini
+      # cuma referensi statis, tidak pernah dibaca kode manapun untuk
+      # menentukan harga aktual — /subscribe selalu pakai products.yml
+      # (yang sejak Tahap 3 di-resolve dari pricing_presets.yml). Menyimpan
+      # angka harga di sini berisiko keliru dikira "harga sungguhan" dan
+      # nggak sinkron sama preset aktif. Kalau butuh lihat harga sekarang,
+      # cek pricing_presets.yml (active_preset) — jangan tambahkan lagi
+      # price_rp di sini.
 
     traveler:
       name: "【旅人】 Traveler"
       role_id: 1517031166279159848
       duration_days: 30
-      price_rp: 40000
       points: 1
 
     companion:
       name: "【同胞】 Companion"
       role_id: 1517676769954762804
       duration_days: 30
-      price_rp: 80000
       points: 2
 
     # "intensive" (Scholar recurring tier) dihapus — bukan tier tersendiri di v3.
@@ -38,6 +43,7 @@ membership:
       name: "【常連】 Patron"
       role_id: 1517718386002628608
       point_threshold: 24
+      # price_rp DIHAPUS di sini juga, alasan sama seperti di atas.
 
   moderator_role_ids:
     - 1517801101959631009    # Royal Guard

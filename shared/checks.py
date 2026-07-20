@@ -17,6 +17,14 @@ Penggunaan decorator:
 
 Penggunaan helper langsung:
     from shared.checks import has_vip_role, has_authorized_access
+
+⚠️ PERUBAHAN PENTING (lihat PRICING_SYSTEM_REFACTOR.md Tahap 5):
+MSG_DIC_DETAIL_ONLY DULU konstanta string (dipanggil tanpa kurung).
+SEKARANG fungsi — WAJIB dipanggil DENGAN kurung: `MSG_DIC_DETAIL_ONLY()`.
+Dipakai di features/dictionary/bunpou_cog.py, kotoba_cog.py, kanji_cog.py
+(masing-masing 2 tempat) — lihat instruksi find-replace di chat/log MD
+untuk update caller-nya, TIDAK otomatis ikut berubah cuma dengan
+mengganti file ini saja.
 """
 
 import os
@@ -24,7 +32,7 @@ import discord
 from discord import app_commands
 from typing import Optional
 
-from shared.config import get_vip_role_ids, get_paid_role_ids, get_staff_role_ids
+from shared.config import get_vip_role_ids, get_paid_role_ids, get_staff_role_ids, get_active_prices
 from shared.messages import Msg
 
 AUTHORIZED_USER_IDS: set[int] = {
@@ -109,8 +117,6 @@ def is_vip():
             return False
         if has_vip_role(member, interaction.guild_id):
             return True
-        # ⚠️ Tahap 4: VIP_ONLY sekarang method, WAJIB pakai kurung () —
-        # lihat catatan di shared/messages.py.
         await interaction.response.send_message(Msg.VIP_ONLY(), ephemeral=True)
         return False
     return app_commands.check(predicate)
@@ -124,7 +130,6 @@ def is_premium():
             return False
         if has_premium_role(member, interaction.guild_id):
             return True
-        # ⚠️ Tahap 4: PREMIUM_ONLY sekarang method, WAJIB pakai kurung ().
         await interaction.response.send_message(Msg.PREMIUM_ONLY(), ephemeral=True)
         return False
     return app_commands.check(predicate)
@@ -143,18 +148,27 @@ def is_staff():
     return app_commands.check(predicate)
 
 
-MSG_DIC_DETAIL_ONLY = (
-    "🔒 **Detail lengkap** (arti, contoh kalimat, cara pakai) khusus member **Trial**, "
-    "**Companion**, atau **Patron**.\n\n"
-    "Kamu tetap bisa menjelajahi **daftar nama & level** semua entri secara gratis dan "
-    "unlimited — cuma detailnya yang terkunci.\n\n"
-    "🤝 **Companion** — Rp80.000 / bulan\n"
-    "👑 **Patron** — Seumur hidup\n\n"
-    "Hubungi staf untuk upgrade! 🙇‍♂️"
-)
-# ⚠️ Tahap 5 (belum dikerjakan): MSG_DIC_DETAIL_ONLY di atas MASIH angka
-# statis (Rp80.000). Akan diubah jadi method dinamis seperti VIP_ONLY di
-# Tahap 5 — lihat PRICING_SYSTEM_REFACTOR.md.
+def MSG_DIC_DETAIL_ONLY() -> str:
+    """
+    Pesan gating detail kamus (/bunpou, /kotoba, /kanji). DULU konstanta
+    string, SEKARANG fungsi — harga Companion di dalamnya sekarang ikut
+    get_active_prices(), bukan angka beku Rp80.000.
+
+    Nama tetap huruf besar (menyalahi konvensi PEP8 untuk fungsi) supaya
+    caller lama gampang ditemukan lewat pencarian teks biasa, dan supaya
+    jelas ini pesan "konstan secara konsep" — beda dari fungsi berparameter
+    seperti Msg.log_amount_exceeded() dkk.
+    """
+    prices = get_active_prices()
+    return (
+        "🔒 **Detail lengkap** (arti, contoh kalimat, cara pakai) khusus member **Trial**, "
+        "**Companion**, atau **Patron**.\n\n"
+        "Kamu tetap bisa menjelajahi **daftar nama & level** semua entri secara gratis dan "
+        "unlimited — cuma detailnya yang terkunci.\n\n"
+        f"🤝 **Companion** — {Msg._format_rp(prices['companion']['monthly'])} / bulan\n"
+        "👑 **Patron** — Seumur hidup\n\n"
+        "Hubungi staf untuk upgrade! 🙇‍♂️"
+    )
 
 
 def has_dic_access(member: discord.Member, guild_id: int = None) -> bool:
