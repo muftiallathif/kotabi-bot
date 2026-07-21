@@ -11,6 +11,14 @@ Penggunaan:
 Jika ada perubahan role/channel ID -> cukup edit shared/server_map.yml, selesai.
 Jika ada perubahan HARGA tier VIP -> cukup edit features/membership/pricing_presets.yml
 (ganti active_preset), selesai. Lihat PRICING_SYSTEM_REFACTOR.md.
+
+⚠️ TAHAP 8: get_tier_info() DIHAPUS dari file ini — fungsi ini punya NOL
+caller di seluruh codebase (dead code), dan field yang dibacanya
+(roles.*.name, roles.*.duration_days, lifetime.name di
+membership_settings.yml) sudah ikut dihapus juga karena cuma bisa
+diakses lewat fungsi ini. Kalau suatu saat butuh info tier lengkap lagi,
+sumber nama & durasi yang BENAR sekarang ada di
+features/membership/products.yml (lewat ProductLoader), bukan di sini.
 """
 
 import os
@@ -157,27 +165,6 @@ def get_paid_role_ids(guild_id: int) -> dict[str, int]:
 
 def get_staff_role_ids(guild_id: int) -> dict[str, int]:
     return get_all_role_ids(guild_id, "royal_guard", "prime_minister")
-
-
-def get_tier_info(tier_name: str) -> dict:
-    """
-    Return info lengkap satu tier (name, role_id, duration_days, price_rp,
-    points, dst) dari membership_settings.yml.
-
-    FIX (bug yang sama seperti get_vip_role_ids): tier_name="patron" dulu
-    selalu return {} karena kode lama cuma cari di cfg["roles"], padahal data
-    Patron ada di cfg["lifetime"] (sejajar, bukan child dari "roles"). Sekarang
-    "patron" di-redirect ke situ.
-
-    CATATAN: field `price_rp` di sini adalah snapshot lama/statis, TIDAK
-    otomatis ikut preset harga aktif. Untuk harga yang benar-benar berlaku
-    sekarang, pakai get_active_prices() — lihat PRICING_SYSTEM_REFACTOR.md
-    bagian 4.7 soal rencana field ini ke depan.
-    """
-    cfg = _load_membership_cfg()
-    if tier_name == "patron":
-        return cfg.get("lifetime", {})
-    return cfg.get("roles", {}).get(tier_name, {})
 
 
 def get_lifetime_threshold() -> int:

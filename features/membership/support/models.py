@@ -48,13 +48,21 @@ class MembershipRow:
             return False
         return self.expires_at > datetime.utcnow()
 
-    @property
-    def is_expired(self) -> bool:
-        if self.is_lifetime:
-            return False
-        if self.expires_at is None:
-            return True
-        return self.expires_at <= datetime.utcnow()
+    # ⚠️ TAHAP 8 (PRICING_SYSTEM_REFACTOR.md — audit dead config/dead code):
+    # Properti `is_expired` DIHAPUS dari sini — ditelusuri seluruh
+    # admin_cog.py, purchase_cog.py, scheduler_cog.py, service.py, tidak
+    # ada satupun caller yang memanggil `.is_expired`. Semua tempat yang
+    # butuh cek status pakai `.is_active` (kebalikannya, sudah ada di
+    # atas) atau bandingkan `expires_at` langsung terhadap waktu sekarang.
+    # Kalau nanti butuh lagi, tinggal tambahkan balik:
+    #
+    #     @property
+    #     def is_expired(self) -> bool:
+    #         if self.is_lifetime:
+    #             return False
+    #         if self.expires_at is None:
+    #             return True
+    #         return self.expires_at <= datetime.utcnow()
 
     @classmethod
     def from_row(cls, row: tuple) -> "MembershipRow":

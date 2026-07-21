@@ -28,10 +28,16 @@ else:
 # tetap bisa dibangun (bot tetap start), bukan KeyError saat import.
 _multipliers = immersion_log_settings.get("points_multipliers", {})
 
+# ⚠️ TAHAP 8 (PRICING_SYSTEM_REFACTOR.md — audit dead config/dead code):
+# Field "short_id" DIHAPUS dari tiap entri di bawah. Ditelusuri seluruh
+# fitur immersion (log_cog.py, stats_cog.py, goals_cog.py,
+# bar_races_cog.py, helpers.py, semua file autocomplete/) — tidak ada
+# satupun caller yang membaca MEDIA_TYPES[...]['short_id']. Dead sejak
+# awal, kemungkinan sisa desain lama yang tidak jadi dipakai.
+
 MEDIA_TYPES = {
     "Visual Novel": {
         "log_name": "Visual Novel (in characters read)",
-        "short_id": "VN",
         "max_logged": 2000000,
         "autocomplete": vn_name_autocomplete,
         "points_multiplier": _multipliers.get("Visual_Novel", 0),
@@ -44,7 +50,6 @@ MEDIA_TYPES = {
     },
     "Manga": {
         "log_name": "Manga (in pages read)",
-        "short_id": "MANGA",
         "max_logged": 1000,
         "autocomplete": anime_manga_name_autocomplete,
         "points_multiplier": _multipliers.get("Manga", 0),
@@ -57,7 +62,6 @@ MEDIA_TYPES = {
     },
     "Anime": {
         "log_name": "Anime (in episodes watched)",
-        "short_id": "ANIME",
         "max_logged": 100,
         "autocomplete": anime_manga_name_autocomplete,
         "points_multiplier": _multipliers.get("Anime", 0),
@@ -70,7 +74,6 @@ MEDIA_TYPES = {
     },
     "Book": {
         "log_name": "Book (in pages read)",
-        "short_id": "BOOK",
         "max_logged": 500,
         "autocomplete": None,
         "points_multiplier": _multipliers.get("Book", 0),
@@ -83,7 +86,6 @@ MEDIA_TYPES = {
     },
     "Reading Time": {
         "log_name": "Reading Time (in minutes)",
-        "short_id": "RT",
         "max_logged": 1440,
         "autocomplete": None,
         "points_multiplier": _multipliers.get("Reading_Time", 0),
@@ -96,7 +98,6 @@ MEDIA_TYPES = {
     },
     "Listening Time": {
         "log_name": "Listening Time (in minutes)",
-        "short_id": "LT",
         "max_logged": 1440,
         "autocomplete": listening_autocomplete,
         "points_multiplier": _multipliers.get("Listening_Time", 0),
@@ -109,7 +110,6 @@ MEDIA_TYPES = {
     },
     "Reading": {
         "log_name": "Reading (in characters read)",
-        "short_id": "READING",
         "max_logged": 2000000,
         "autocomplete": None,
         "points_multiplier": _multipliers.get("Reading", 0),
