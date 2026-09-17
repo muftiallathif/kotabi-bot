@@ -1,10 +1,10 @@
 {
  "_catatan": "Dibaca bot saat startup supaya pertanyaan 'VPS A dan VPS B menampilkan hasil berbeda' bisa dilacak ke versi database, bukan ditebak.",
  "nama": "database_nihongo",
- "versi": "2026.09.09-baseline-v1",
- "berkas": "database_nihongo_2026-09-12_baseline-v1.zip",
- "ukuran_byte": 548148734,
- "sha256": "cc87a58a0079c958b79b2932c9a26512d161da50a726ec1fb9241fd80228e3bd",
+ "versi": "2026.09.14-dictionary-done",
+ "berkas": "database_nihongo.zip",
+ "ukuran_byte": 548105283,
+ "sha256": "cb7146b93008b430bbf4f9439452903f1bb20caf264f950466bd616baf01b4bd",
  "berisi": {
   "berkas_json": 89,
   "berkas_svg": 6699,
