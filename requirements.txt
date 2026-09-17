@@ -12,3 +12,4 @@ bar_chart_race
 requests
 imagehash
 Pillow
+ijson

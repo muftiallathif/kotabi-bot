@@ -1,7 +1,7 @@
 DICTIONARY UX CONTRACT — VERIFIED  (/kanji /kotoba /bunpou)
 ========================================================
-tanggal            : 2026-09-14T03:44:20+00:00
-discord.py         : 2.7.1
+tanggal            : 2026-09-17T05:30:34+00:00
+discord.py         : 2.5.2
 
 Golden cases       : 28
 Payload Discord    : 97
