@@ -15,8 +15,8 @@ Kalau keduanya dalam satu siklus Git, tiap rebuild database menambah ratusan MB
 ```
 Git                          Artefak eksternal
 ├── kode                     ├── database_nihongo.zip  (~548 MB)
-├── skema                    ├── kamus.sqlite3         (hasil build)
-├── skrip build              └── SVG urutan goresan     (6.699 berkas)
+├── skema                    ├── data/kamus_nihongo/   (hasil ekstrak, ~2,8 GB)
+├── skrip verifikasi         └── SVG urutan goresan     (6.699 berkas)
 ├── migrasi
 ├── tes
 └── database/VERSI.json      ← penunjuk versi + checksum
@@ -29,21 +29,23 @@ git pull
    ↓
 unduh artefak database (versi sesuai database/VERSI.json)
    ↓
-python3 scripts/build_kamus.py <zip> data/kamus.sqlite3
+python3 scripts/verifikasi_artefak.py <zip> database/VERSI.json
+   ↓
+unzip <zip> -d data/  &&  mv data/database_nihongo data/kamus_nihongo
    ↓
 jalankan bot
 ```
 
-## Dua SQLite, bukan satu
+## Dua database, bukan satu
 
 | Berkas | Isi | Sifat | Lock |
 |---|---|---|---|
 | `data/state.sqlite3` | XP, membership, purchase, tracking, progress | baca+tulis | perlu `_db_lock` |
-| `data/kamus.sqlite3` | kanji, kotoba, bunpou, frekuensi | **read-only** setelah build | tidak ikut antre di lock state |
+| `data/kamus_nihongo/` | kanji, kotoba, bunpou, frekuensi (JSON, dibaca langsung oleh `resolver.py`) | **read-only** | tidak ikut antre di lock state |
 
 Kamus tidak perlu ikut antre di lock milik application state. Tapi itu **bukan**
-berarti "read-only = bebas pertimbangan concurrency" — `kamus.sqlite3` tetap dibuka
-mode WAL/read-only dan punya pola aksesnya sendiri.
+berarti "read-only = bebas pertimbangan concurrency" — lihat
+`features/dictionary_v2/README.md` untuk pola aksesnya.
 
 ## `VERSI.json`
 

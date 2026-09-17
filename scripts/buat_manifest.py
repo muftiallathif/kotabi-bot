@@ -22,7 +22,7 @@ import hashlib, os, sys, zipfile, datetime
 PENTING = [
     'core/bot.py', '.gitignore',
     'database/README.md', 'database/VERSI.json',
-    'scripts/build_kamus.py', 'scripts/verifikasi_artefak.py', 'scripts/buat_manifest.py',
+    'scripts/verifikasi_artefak.py', 'scripts/buat_manifest.py',
     'tests/uji_transaksi.py', 'tests/README.md',
     'features/dictionary/kanji_cog.py',
     'features/dictionary/kotoba_cog.py',
