@@ -14,11 +14,10 @@ Kalau keduanya dalam satu siklus Git, tiap rebuild database menambah ratusan MB
 
 ```
 Git                          Artefak eksternal
-├── kode                     ├── database_nihongo.zip  (~548 MB)
-├── skema                    ├── kamus.sqlite3         (hasil build)
-├── skrip build              └── SVG urutan goresan     (6.699 berkas)
-├── migrasi
-├── tes
+├── kode                     ├── database_nihongo.zip   (~548 MB, GitHub Releases)
+├── skema                    └── data/kamus_nihongo/     (hasil ekstrak, ~2,8 GB:
+├── migrasi                       ~89 JSON + 6.699 SVG goresan — dibaca LANGSUNG
+├── tes                           oleh resolver.py, tidak di-build jadi SQLite)
 └── database/VERSI.json      ← penunjuk versi + checksum
 ```
 
@@ -27,23 +26,31 @@ Git                          Artefak eksternal
 ```
 git pull
    ↓
-unduh artefak database (versi sesuai database/VERSI.json)
+unduh database_nihongo.zip dari GitHub Releases (versi sesuai database/VERSI.json)
    ↓
-python3 scripts/build_kamus.py <zip> data/kamus.sqlite3
+python3 scripts/verifikasi_artefak.py database_nihongo.zip database/VERSI.json
+   ↓
+unzip database_nihongo.zip -d data/ && mv data/database_nihongo data/kamus_nihongo
+   ↓
+export KOTABI_KAMUS_V2=1 KOTABI_DB_NIHONGO=data/kamus_nihongo
    ↓
 jalankan bot
 ```
 
-## Dua SQLite, bukan satu
+## SQLite (state) vs JSON (kamus) — bukan "dua SQLite"
 
-| Berkas | Isi | Sifat | Lock |
+| | Isi | Bentuk | Lock |
 |---|---|---|---|
-| `data/state.sqlite3` | XP, membership, purchase, tracking, progress | baca+tulis | perlu `_db_lock` |
-| `data/kamus.sqlite3` | kanji, kotoba, bunpou, frekuensi | **read-only** setelah build | tidak ikut antre di lock state |
+| `data/db.sqlite3` (`PATH_TO_DB`) | users, gatekeeper, membership, immersion, **+ tabel dictionary lama** (CSV-based, `features/dictionary/`) | SQLite, baca+tulis | perlu `bot._db_lock`, lewat `core/bot.py` (`RUN`/`GET`/`TRANSAKSI()`) |
+| `data/kamus_nihongo/` | kanji, kotoba, bunpou, frekuensi, aksen (`dictionary_v2`) | folder JSON mentah, **read-only** | tidak ada lock — dibaca lazy/streaming per-request oleh `resolver.py`, tidak ikut antre di `_db_lock` |
 
-Kamus tidak perlu ikut antre di lock milik application state. Tapi itu **bukan**
-berarti "read-only = bebas pertimbangan concurrency" — `kamus.sqlite3` tetap dibuka
-mode WAL/read-only dan punya pola aksesnya sendiri.
+`dictionary_v2` **tidak** melewati SQLite sama sekali: `resolver.py` baca file JSON
+langsung — `DB.j()` untuk file kecil (di-cache di memori), `DB.besar()` untuk file
+ratusan MB (di-stream pakai `ijson`, tidak pernah di-`json.load()` penuh). Sempat ada
+`scripts/build_kamus.py` untuk membangun `data/kamus.sqlite3` sebagai lapis ketiga,
+tapi jalur produksi yang benar-benar dipakai (`kamus_v2_cog.py` → `resolver.py`) tidak
+pernah membacanya — skrip itu dihapus supaya dokumen ini tidak menunjuk ke langkah
+yang tidak ada efeknya.
 
 ## `VERSI.json`
 

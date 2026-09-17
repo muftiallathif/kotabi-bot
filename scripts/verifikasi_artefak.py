@@ -6,7 +6,7 @@ ternyata berisi build 8 September (518.937.899 byte) padahal yang dimaksud build
 12 September (548.148.734 byte). Perbedaannya tidak terlihat dari nama, ukuran
 sekilas, atau perintah salin yang "berhasil".
 
-Jalankan SEBELUM build_kamus.py:
+Jalankan SEBELUM extract database_nihongo.zip ke data/kamus_nihongo/:
 
     python3 scripts/verifikasi_artefak.py <zip> database/VERSI.json
 

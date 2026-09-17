@@ -9,7 +9,7 @@ kotabi-bot/
 ├── core/              main/setup/bot  (TRANSAKSI() baru di bot.py)
 ├── features/          semua fitur, termasuk dictionary_v2/ yang baru
 ├── shared/
-├── scripts/           build_kamus · verifikasi_artefak · buat_manifest
+├── scripts/           verifikasi_artefak · buat_manifest
 ├── database/          README.md · VERSI.json     (metadata saja, bukan datanya)
 ├── tests/             uji_transaksi.py
 ├── fonts/

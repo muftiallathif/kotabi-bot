@@ -220,15 +220,13 @@ __marimo__/
 # sekali di-commit, ukurannya permanen di history dan `git clone` jadi tidak
 # masuk akal. Satu-satunya cara menghapusnya adalah rewrite history.
 #
-# Yang masuk Git : kode, skema, skrip build, migrasi, tes, config
+# Yang masuk Git : kode, skema, migrasi, tes, config
 # Yang TIDAK     : dataset mentah, SQLite hasil build, aset besar
-# Cara memperoleh: lihat database/README.md  ->  scripts/build_kamus.py
+# Cara memperoleh: lihat database/README.md
 
 data/*.sqlite3
 data/*.sqlite3-wal
 data/*.sqlite3-shm
-data/kamus.sqlite3
-data/state.sqlite3
 data/raw/
 data/artifact/
 database/artifact/
