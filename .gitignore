@@ -214,3 +214,30 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ── Data & artefak besar — JANGAN masuk Git ──────────────────────────────
+# Git menyimpan SETIAP versi selamanya. Database nihongo ~548 MB + 6.699 SVG;
+# sekali di-commit, ukurannya permanen di history dan `git clone` jadi tidak
+# masuk akal. Satu-satunya cara menghapusnya adalah rewrite history.
+#
+# Yang masuk Git : kode, skema, skrip build, migrasi, tes, config
+# Yang TIDAK     : dataset mentah, SQLite hasil build, aset besar
+# Cara memperoleh: lihat database/README.md  ->  scripts/build_kamus.py
+
+data/*.sqlite3
+data/*.sqlite3-wal
+data/*.sqlite3-shm
+data/kamus.sqlite3
+data/state.sqlite3
+data/raw/
+data/artifact/
+database/artifact/
+features/dictionary/assets/
+
+# Dataset kamus (diunduh saat deploy, bukan di-commit)
+database_nihongo.zip
+database_nihongo/
+*.svg
+
+# database_nihongo hasil ekstrak (dipakai features/dictionary_v2)
+data/kamus_nihongo/

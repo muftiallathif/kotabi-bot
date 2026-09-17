@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import aiosqlite
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 import os
 from pathlib import Path
@@ -70,6 +71,43 @@ class KotabiBot(commands.Bot):
             async with aiosqlite.connect(self.db_path) as db:
                 async with db.execute(query, parameters) as cursor:
                     return await cursor.fetchall()
+
+
+    @asynccontextmanager
+    async def TRANSAKSI(self):
+        """Beberapa statement dalam SATU transaksi, dengan rollback otomatis.
+
+        RUN()/RUN_MANY() masing-masing membuka koneksi sendiri DAN commit
+        sendiri, lalu melepas _db_lock. Jadi urutan seperti:
+
+            await bot.RUN(DELETE_ALL)          # <- sudah COMMIT di sini
+            await bot.RUN_MANY(INSERT, rows)
+
+        meninggalkan dua celah nyata:
+          1. kalau INSERT gagal (disk penuh, proses mati, baris cacat), tabel
+             tertinggal KOSONG dan sudah ter-commit -- kamus mati total sampai
+             reload berikutnya;
+          2. lock dilepas di antara keduanya, jadi query yang masuk di celah itu
+             melihat tabel kosong. Ini bisa dipicu user lewat /kanji_reload,
+             /kotoba_reload, /bunpou_reload.
+
+        Pakai ini untuk operasi yang harus atomik:
+
+            async with bot.TRANSAKSI() as db:
+                await db.execute(DELETE_ALL)
+                await db.executemany(INSERT_ENTRY, rows)
+
+        Commit dilakukan sekali di akhir; kalau ada exception, rollback dan
+        exception-nya dilempar ulang.
+        """
+        async with self._db_lock:
+            async with aiosqlite.connect(self.db_path) as db:
+                try:
+                    yield db
+                    await db.commit()
+                except Exception:
+                    await db.rollback()
+                    raise
 
     async def init_shared_tables(self):
         """Bikin tabel-tabel kecil lintas-fitur (mis. users) sekali saat startup."""

@@ -892,9 +892,13 @@ class Kanji(commands.Cog):
                     _parse_list(row.get("meanings_en")),
                 )
 
-        await self.bot.RUN(DELETE_ALL)
-        if rows:
-            await self.bot.RUN_MANY(INSERT_ENTRY, rows)
+        # DELETE + INSERT harus ATOMIK: kalau INSERT gagal, DELETE ikut batal.
+        # Sebelumnya dua panggilan terpisah -> reload yang gagal di tengah
+        # meninggalkan kamus KOSONG dan sudah ter-commit.
+        async with self.bot.TRANSAKSI() as db:
+            await db.execute(DELETE_ALL)
+            if rows:
+                await db.executemany(INSERT_ENTRY, rows)
         self._reading_lookup = reading_lookup
 
         _log.info("✅ %d entri kanji dimuat dari %s.", len(rows), CSV_PATH)
@@ -927,9 +931,10 @@ class Kanji(commands.Cog):
                 if row.get("kanji") and row.get("arti_id")
             ]
 
-        await self.bot.RUN(DELETE_ALL_MEANINGS)
-        if rows:
-            await self.bot.RUN_MANY(INSERT_MEANING, rows)
+        async with self.bot.TRANSAKSI() as db:
+            await db.execute(DELETE_ALL_MEANINGS)
+            if rows:
+                await db.executemany(INSERT_MEANING, rows)
 
         _log.info(
             "✅ %d terjemahan Indonesia dimuat dari %s (dari total kanji di database).",

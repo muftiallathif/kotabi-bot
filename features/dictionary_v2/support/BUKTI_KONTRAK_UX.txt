@@ -1,0 +1,26 @@
+DICTIONARY UX CONTRACT — VERIFIED  (/kanji /kotoba /bunpou)
+========================================================
+tanggal            : 2026-09-14T03:44:20+00:00
+discord.py         : 2.7.1
+
+Golden cases       : 28
+Payload Discord    : 97
+Tombol diperiksa   : 231
+Payload terbesar   : 1080 / 6000 karakter
+
+Renderer contract  : PASS   (uji_tingkat.py, 40 kartu)
+Adapter contract   : PASS   (uji_adapter.py, 30 perpindahan)
+Round-trip         : PASS   L1->L2->L3->L1 identik, dicek di payload
+Production path    : PASS   lewat ke_embed() / discord.Embed sungguhan
+Metadata leakage   : PASS   _tingkat/_domain tidak ada di payload
+Empty fields       : PASS
+Identity stability  : PASS   tombol tingkat tidak pernah pindah entri
+Discord limits     : PASS   field<=25, value<=1024, total<=6000, tombol<=5
+
+CATATAN
+- Isi L2/L3 SENGAJA belum dibekukan; yang dibekukan aturan perilakunya.
+- Kontrak L1 BERBEDA per domain, diturunkan dari sifat domainnya:
+    /kanji  identitas + bacaan + arti
+    /kotoba   arti; lemma diselesaikan -> bentuk yang DICARI wajib terlihat
+    /bunpou arti + 接続; daftar sumber jadi tombol, bukan blok teks
+- Yang tidak teruji dari sini: pengiriman ke gateway Discord (butuh token).

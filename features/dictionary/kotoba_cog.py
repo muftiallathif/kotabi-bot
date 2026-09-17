@@ -623,9 +623,11 @@ class Kotoba(commands.Cog):
             for row in reader:
                 rows.append(tuple(row.get(col, "") for col in FIELD_NAMES))
 
-        await self.bot.RUN(DELETE_ALL)
-        if rows:
-            await self.bot.RUN_MANY(INSERT_ENTRY, rows)
+        # atomik -- lihat core/bot.py TRANSAKSI()
+        async with self.bot.TRANSAKSI() as db:
+            await db.execute(DELETE_ALL)
+            if rows:
+                await db.executemany(INSERT_ENTRY, rows)
 
         _log.info("✅ %d entri kotoba dimuat dari %s.", len(rows), CSV_PATH)
 
