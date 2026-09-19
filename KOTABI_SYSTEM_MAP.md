@@ -292,11 +292,23 @@ sengaja **bukan** rekomendasi solusi:
 **A. `/log` (inti loop immersion) digerbang `@is_vip()`** — Drifter
 (user gratis, baru masuk) tidak punya akses ke logging immersion sama
 sekali, bukan sekadar dibatasi (`IMMERSION_SYSTEM.md` §3, `COMMANDS.md` §3).
-Ini **candidate product gap dengan evidence implementasi kuat** —
-statusnya sebagai "gap" bergantung jawaban pertanyaan produk yang belum
-pernah dijawab eksplisit: *apakah immersion dimaksudkan jadi
-pengalaman inti yang harus tersedia gratis untuk newcomer, atau memang
-premium accelerator?*
+
+> **✅ DIPUTUSKAN (19 Sep 2026):** `/log` **seharusnya tersedia untuk
+> Drifter**, dengan batasan (bukan dibuka penuh tanpa syarat).
+> Alasannya: `/log` membentuk loop belajar (catat → lihat progres →
+> terdorong lanjut), bukan cuma fitur tambahan — mengunci totalnya
+> membuat beda free/VIP jadi "bisa belajar sebagian vs bisa menjalankan
+> sistem belajar" (gating *permission to participate*), bukan
+> "acceleration" seperti yang dinyatakan filosofi freemium Kotabi
+> sendiri (lihat B). Model kasar: **Drifter → `/log` jalan dengan
+> batasan; VIP → penuh** (progression/analytics/convenience jadi
+> pembeda tier, bukan akses dasar).
+>
+> **BELUM diputuskan (turunan langsung dari keputusan ini, prioritas
+> berikutnya):** bentuk batasan Drifter secara konkret — kandidat yang
+> disebut saat decide: jumlah log, periode history, statistik, goals,
+> leaderboard/race, achievement, export, atau kombinasi beberapa itu.
+> Jangan diasumsikan/diimplementasikan sebelum ini dijawab eksplisit.
 
 **B. Tegangan filosofi vs implementasi** — `MEMBERSHIP_SYSTEM.md` §1
 menyatakan "freemium = percepatan, bukan gembok — versi gratis harus
@@ -306,16 +318,15 @@ paling dasar. A dan B bukan dua temuan terpisah — keduanya satu
 pertanyaan besar: **apakah positioning freemium Kotabi konsisten
 dengan pengalaman first-user yang sesungguhnya?**
 
-**Pertanyaan untuk fase Product Decision** (belum dijawab, sengaja
-tidak diputuskan di sini):
+**Pertanyaan untuk fase Product Decision:**
 
-| Pertanyaan | Tujuan |
-|---|---|
-| Apa core loop gratis Kotabi? | Menentukan pengalaman dasar |
-| Apa yang sebenarnya dipercepat oleh premium? | Menentukan value membership |
-| Apakah immersion termasuk core loop? | Menentukan status `/log` |
-| Kalau gratis, apa batas premium-nya? | Menghindari "gembok" tanpa disadari |
-| Apa first success newcomer yang sesungguhnya? | Menentukan onboarding |
+| Pertanyaan | Tujuan | Status |
+|---|---|---|
+| Apakah immersion termasuk core loop? | Menentukan status `/log` | ✅ **Diputuskan 19 Sep** — ya, lihat kotak di atas |
+| Kalau gratis, apa batas premium-nya untuk `/log`? | Menghindari "gembok" tanpa disadari | ⏳ Turunan langsung dari keputusan di atas — **prioritas berikutnya** |
+| Apa core loop gratis Kotabi secara keseluruhan (di luar immersion)? | Menentukan pengalaman dasar | ⏳ Belum |
+| Apa yang sebenarnya dipercepat oleh premium (di luar immersion)? | Menentukan value membership | ⏳ Belum |
+| Apa first success newcomer yang sesungguhnya? | Menentukan onboarding | ⏳ Belum |
 
 Open question yang lebih lemah evidence-nya (dicatat, bukan
 diprioritaskan): kualitas `channel_guide`/`/info` sebagai mekanisme
