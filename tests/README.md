@@ -178,9 +178,13 @@ diam-diam melakukan fase *decide* yang belum pernah didiskusikan.
 | 2 | `/log_export`/`/logs`/`/log_stats` "Khusus Staf" tidak ditegakkan + non-ephemeral | `IMMERSION_SYSTEM.md` §14 | ✅ | ✅ | N/A |
 | 3 | `rank_saver` — role staff auto-restore | `SOCIAL_SYSTEM.md` §10 | N/A | N/A | ✅ (cuma invariant "role revoked tidak boleh balik", bukan scope A/B) |
 | 4 | `rank_saver` ↔ `/selfmute` | `MODERATION_SYSTEM.md` §4 | N/A | N/A | ✅ |
-| 5 | `/solved` tanpa otorisasi | `MODERATION_SYSTEM.md` §2 | ⏳ | ⏳ | N/A |
-| 6 | `/kneelderboard` cross-guild | `SOCIAL_SYSTEM.md` §3 | ⏳ | ⏳ | N/A (scope belum diputuskan) |
-| 7 | `/say` permission laundering via `channel` | `SERVER_ADMIN_SYSTEM.md` §4.4 | ⏳ | ⏳ | N/A |
+| 5 | `/solved` tanpa otorisasi + state via rename | `MODERATION_SYSTEM.md` §2 | ✅ | ✅ | N/A |
+| 6 | `/kneelderboard` cross-guild | `SOCIAL_SYSTEM.md` §3 | ✅ (reproduksi behavior saat ini saja — scope fix belum diputuskan) | N/A | N/A |
+| 7 | `/say` permission laundering via `channel` | `SERVER_ADMIN_SYSTEM.md` §4.4 | ✅ | N/A | N/A |
 
+**Semua 7 finding sekarang punya reproduction test — 20/20 test PASS.**
 Belum ada satu pun fix diterapkan ke kode produksi — semua file di
 `features/`/`shared/` di luar `tests/` tetap seperti kondisi audit.
+Langkah berikutnya: fase *Decide* (terutama untuk #3/#6 yang scope
+fix-nya belum diputuskan), baru *Fix*, lalu balik ke test-test ini dan
+flip assertion-nya dari reproduction jadi acceptance satu per satu.
