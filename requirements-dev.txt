@@ -1,0 +1,6 @@
+# Dev/test-only dependencies — NOT installed in the production Docker
+# image (Dockerfile only runs `pip install -r requirements.txt`).
+# See tests/README.md for how these are used and why.
+-r requirements.txt
+pytest
+pytest-asyncio

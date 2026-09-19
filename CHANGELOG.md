@@ -18,6 +18,28 @@ suatu perubahan wajib dicatat di sini vs cukup di dokumen topiknya saja.
 
 ## 2026
 
+- **19 Sep** — `tests/` dibuat (belum pernah ada sebelumnya) — mulai
+  fase Testing setelah audit dokumentasi 8 fitur selesai. Sebelum
+  menulis test apa pun: eksperimen empiris terisolasi (discord.py 2.7.1,
+  tidak diklaim = versi produksi karena `discord.py` tidak dipin di
+  `requirements.txt`) mengonfirmasi 2 hal krusial untuk desain harness —
+  `@app_commands.default_permissions()` tidak menambah apa pun ke
+  `command.checks` (murni metadata), sementara `@is_staff()` (async,
+  gagal via `return False` + kirim response) dan
+  `app_commands.checks.has_permissions()` (sync, gagal via
+  `raise MissingPermissions`) punya failure semantics berbeda yang
+  harus ditangani harness generik. Dikonfirmasi juga: SQLite `:memory:`
+  tidak bisa dipakai karena `core/bot.py` membuka koneksi baru per
+  panggilan `RUN`/`GET` — wajib pakai temp file. `conftest.py` (fixture
+  primitif: `interaction_factory`, `bot` pakai `KotabiBot` asli,
+  `run_checks` untuk Level B) dan vertical slice pertama
+  (`test_backup_database_permissions.py`, finding paling serius dari
+  seluruh audit) ditulis dan dijalankan — kedua assertion PASS,
+  mengonfirmasi ulang secara otomatis bahwa `/backup_database` memang
+  tidak punya backstop di Level A maupun Level B. `requirements-dev.txt`
+  dibuat terpisah dari `requirements.txt` produksi. 6 finding lain
+  masih menunggu test masing-masing — status lengkap di `tests/README.md`.
+  `DOCS_INDEX.md` diupdate. Tidak ada kode produksi yang diubah.
 - **19 Sep** — `SERVER_ADMIN_SYSTEM.md` dibuat (belum pernah ada
   sebelumnya) — dokumen topik terakhir, semua 8 fitur (`dictionary`,
   `gatekeeper`, `membership`, `immersion`, `social`, `moderation`,

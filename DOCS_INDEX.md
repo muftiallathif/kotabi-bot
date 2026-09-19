@@ -24,6 +24,7 @@ update dokumentasi.
 | `SOCIAL_SYSTEM.md` | Mekanisme `/info`, `/kneelderboard`, `/bookmarks`, `/create_role`, auto-role, voice join-to-create, pertanyaan harian AI, role event, snapshot/restore role | Mau ubah fitur social apa pun, atau debug kenapa role balik sendiri setelah dicabut |
 | `MODERATION_SYSTEM.md` | Mekanisme `/solved`, `/selfmute`, `/unmute_user`, `/sticky_last_message`, auto-archive thread, interaksi dengan `rank_saver_cog.py` | Mau ubah fitur moderation apa pun, atau debug kenapa mute bisa batal sendiri |
 | `SERVER_ADMIN_SYSTEM.md` | Mekanisme `/backup_database`, `/backup_discord_server`, `/say` — rantai otorisasi lengkap tiap command | Mau ubah fitur backup/say, atau cek siapa sebenarnya bisa akses backup database |
+| `tests/README.md` | Cara kerja regression harness (Level A/B/C), status test per finding keamanan | Mau jalankan/tambah test, atau cek finding mana yang sudah punya reproduction test |
 | `PERMISSION_MATRIX.md` | Permission channel & role lintas-fitur (siapa bisa lihat/kirim di channel mana) | Mau ubah akses channel, role baru, atau `/permission`/`/structure` |
 | `MEMBERSHIP_SYSTEM.md` | Alur `/subscribe`, anti-fraud bukti transfer, command admin, scheduler, skema tabel membership, cara nambah produk, keputusan strategi final | Mau ubah alur pembelian, tier, admin command membership |
 | `PRICING_SYSTEM_REFACTOR.md` | Harga tier VIP (Traveler/Companion/Patron + varian 6bln/1thn), cara ganti harga lewat preset, riwayat audit dead config | Mau ganti harga, nambah/ubah preset, atau cari tau kenapa suatu field harga dihapus |
@@ -129,9 +130,13 @@ teknis lain yang sudah ketahuan sepanjang audit):**
   `shared/server_map.yml`) belum punya dokumen konsolidasi —
   `PERMISSION_MATRIX.md` §1 secara eksplisit mengecualikannya karena
   tidak dipakai gating channel.
-- **Tidak ada folder `tests/`** di repo — bukan gap dokumentasi, tapi
-  gap pengujian otomatis (engineering gap, fase terpisah setelah
-  seluruh audit dokumentasi selesai).
+- ~~**Tidak ada folder `tests/`** di repo~~ — **update 19 Sep:**
+  `tests/` dibuat, vertical slice pertama (`/backup_database`, finding
+  paling serius) sudah jalan sebagai regression test — lihat
+  `tests/README.md`. 6 finding lain masih menunggu test-nya masing-
+  masing (2 di antaranya, `rank_saver` & `/kneelderboard`, menunggu
+  keputusan desain dulu sebelum bisa ditulis — lihat status table di
+  `tests/README.md`).
 
 Keputusan yang belum diambil: apakah `system/` butuh 1 MD sendiri, atau
 cukup digabung ke dokumen lain — perlu dievaluasi, bukan otomatis
