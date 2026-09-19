@@ -18,6 +18,19 @@ suatu perubahan wajib dicatat di sini vs cukup di dokumen topiknya saja.
 
 ## 2026
 
+- **19 Sep** — Reproduction test finding #2 ditambahkan
+  (`tests/security/test_immersion_export_stats_permissions.py`, 10 test)
+  — `/log_export`, `/logs`, `/log_stats` terhadap actor non-staff,
+  dengan authorization dan visibility sengaja jadi assertion terpisah.
+  Konfirmasi lewat kode: `/log_export`/`/logs` digerbang `@is_vip()`
+  (populasi salah — VIP, bukan staff, lolos), `/log_stats` tanpa gate
+  sama sekali (`checks == []`); ketiganya mengirim hasil non-ephemeral.
+  Sanity-check tambahan (`test_level_b_non_vip_is_still_rejected`)
+  membuktikan `/log_export`/`/logs` BUKAN "tanpa gate" — beda finding
+  dari `/log_stats`, sengaja tidak dicampur jadi satu klaim. Semua 12
+  test (termasuk 2 dari finding #1) PASS — reproduction, bukan
+  acceptance. `tests/README.md` diupdate. Tidak ada kode produksi yang
+  diubah.
 - **19 Sep** — `IMMERSION_SYSTEM.md`/`COMMANDS.md` dikoreksi: saat
   menyiapkan test untuk finding #2 (`/log_export`/`/logs`/`/log_stats`),
   ditemukan bahwa `/log_export` dan `/logs` **juga non-ephemeral** di

@@ -142,12 +142,40 @@ block total vs gate staff vs redact) **belum ditulis sama sekali**
 sampai keputusan desainnya diambil eksplisit — supaya test suite tidak
 diam-diam melakukan fase *decide* yang belum pernah didiskusikan.
 
+## Pola tambahan yang muncul dari finding #2
+
+- **Authorization dan visibility selalu jadi class/assertion
+  terpisah**, bahkan kalau root cause-nya berdekatan (lihat
+  `TestLogExportAuthorization` vs `TestLogExportVisibility` di
+  `test_immersion_export_stats_permissions.py`) — supaya fix yang
+  mengubah *siapa boleh* tidak otomatis dianggap juga memperbaiki
+  *bagaimana hasilnya ditampilkan*, atau sebaliknya.
+- **Sanity-check arah sebaliknya** ditambahkan kalau relevan (mis.
+  `test_level_b_non_vip_is_still_rejected` untuk `/log_export`) — supaya
+  test tidak melebih-lebihkan temuan. `/log_export`/`/logs` punya gate
+  yang salah populasi (VIP, bukan staff), BUKAN "tanpa gate sama
+  sekali" seperti `/log_stats` — dua finding yang beda, jangan
+  dicampur jadi satu klaim generik.
+- **Mocking cuma untuk mesin yang benar-benar incidental** terhadap
+  finding yang diuji — `/log_stats`'s chart rendering (matplotlib/
+  seaborn) di-mock karena bukan itu yang diuji (authorization +
+  visibility respons, bukan isi grafiknya), sementara layer DB tetap
+  SQLite temp file asli. Jangan mock sesuatu cuma karena "lebih cepat"
+  kalau itu bagian dari apa yang sedang dibuktikan.
+- **Isolasi config eksplisit** (`isolated_role_config` fixture) —
+  `get_staff_role_ids()`/`get_vip_role_ids()` di-patch ke mapping
+  tetap yang dikontrol test, bukan bergantung pada isi
+  `server_map.yml`/`membership_settings.yml` produksi yang sesungguhnya
+  (supaya test tidak diam-diam rusak kalau seseorang mengedit config
+  asli, dan tidak diam-diam salah kalau config asli kebetulan berubah
+  bentuk).
+
 ## Status per finding
 
 | # | Finding | Dokumen | Level A | Level B | Level C |
 |---|---|---|---|---|---|
 | 1 | `/backup_database` authorization regression | `SERVER_ADMIN_SYSTEM.md` §2 | ✅ | ✅ | N/A |
-| 2 | `/log_export`/`/logs`/`/log_stats` "Khusus Staf" tidak ditegakkan | `IMMERSION_SYSTEM.md` §14 | ⏳ | ⏳ | N/A |
+| 2 | `/log_export`/`/logs`/`/log_stats` "Khusus Staf" tidak ditegakkan + non-ephemeral | `IMMERSION_SYSTEM.md` §14 | ✅ | ✅ | N/A |
 | 3 | `rank_saver` — role staff auto-restore | `SOCIAL_SYSTEM.md` §10 | ⏳ | N/A | ⏳ (scope A/B belum diputuskan) |
 | 4 | `rank_saver` ↔ `/selfmute` | `MODERATION_SYSTEM.md` §4 | ⏳ | N/A | ⏳ |
 | 5 | `/solved` tanpa otorisasi | `MODERATION_SYSTEM.md` §2 | ⏳ | ⏳ | N/A |
