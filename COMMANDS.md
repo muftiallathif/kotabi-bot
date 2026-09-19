@@ -175,7 +175,7 @@ thread latihan `quiz-public` yang tidak aktif (default tiap 1 jam, lihat
 | `voice_jtc_cog.py` | Voice "Join to Create" — bikin room privat otomatis |
 | `daily_question_cog.py` | Generate pertanyaan harian via OpenAI (background task tiap menit) |
 | `event_roles_cog.py` | Role sementara mengikuti Discord Scheduled Event |
-| `rank_saver_cog.py` | Snapshot role tiap 10 menit, pulihkan otomatis saat user rejoin ⚠️ role staff bisa ikut ter-restore setelah sengaja dicabut (window kick/rejoin ≤10 menit) |
+| `rank_saver_cog.py` | Snapshot role tiap 10 menit, pulihkan otomatis saat user rejoin ⚠️ role staff bisa ikut ter-restore setelah sengaja dicabut — snapshot basi tidak dibatasi 10 menit (baris DB tidak pernah dihapus), berlaku juga untuk rejoin setelah ban→unban |
 
 Detail lengkap mekanisme + temuan keamanan: `SOCIAL_SYSTEM.md`.
 

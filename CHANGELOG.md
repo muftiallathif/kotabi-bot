@@ -18,6 +18,18 @@ suatu perubahan wajib dicatat di sini vs cukup di dokumen topiknya saja.
 
 ## 2026
 
+- **19 Sep** — `SOCIAL_SYSTEM.md` §10 diperkuat lewat review kedua
+  khusus `rank_saver_cog.py` (dibaca penuh + grep seluruh repo untuk
+  `user_ranks`). Perubahan material: baris `user_ranks` dikonfirmasi
+  tidak pernah dihapus di mana pun — masa eksposur snapshot basi TIDAK
+  dibatasi 10 menit (cuma syarat *terjadinya* yang dibatasi window itu);
+  ban→unban→rejoin dikonfirmasi juga memicu restorasi; koreksi framing
+  "kick bypass ban" jadi "`on_member_join` tidak membedakan jenis
+  rejoin"; root cause diklarifikasi lewat komentar kode asli
+  (`role_ids_to_ignore` dirancang untuk role situasional, bukan exclude
+  staff) — blacklist dicatat sebagai kandidat mitigasi, bukan solusi
+  final. `COMMANDS.md`/`DOCS_INDEX.md` diselaraskan. Documentation-only,
+  `rank_saver_cog.py` tidak diubah. Detail: `SOCIAL_SYSTEM.md` §10.
 - **19 Sep** — `SOCIAL_SYSTEM.md` dibuat (belum pernah ada sebelumnya).
   Dibaca penuh 9 file `features/social/` + `git log -p --follow` tiap
   file, mencari pola "restriction UI tidak ditegakkan" sama seperti

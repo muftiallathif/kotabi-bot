@@ -85,8 +85,9 @@ menemukan gap keamanan/dokumentasi nyata yang **belum diperbaiki**
   "Khusus Staf" di UI tapi tidak ditegakkan di kode —
   `IMMERSION_SYSTEM.md` §14.
 - `rank_saver_cog.py` (social) bisa mengembalikan role — termasuk role
-  staff — secara otomatis setelah sengaja dicabut, lewat window
-  staleness kick/rejoin ≤10 menit — `SOCIAL_SYSTEM.md` §10, §14.
+  staff — secara otomatis setelah sengaja dicabut; masa eksposurnya
+  TIDAK dibatasi 10 menit (baris DB tidak pernah dihapus), berlaku juga
+  untuk rejoin setelah ban→unban — `SOCIAL_SYSTEM.md` §10, §14.
 - `/kneelderboard` (social) membolehkan query leaderboard server
   Discord lain tanpa cek keanggotaan — `SOCIAL_SYSTEM.md` §3, §14.
 

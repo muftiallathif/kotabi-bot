@@ -196,55 +196,161 @@ gap di bagian lain dokumen ini.
 
 ## 10. Snapshot & Restore Role (`rank_saver_cog.py`) — ⚠️ Temuan Paling Signifikan
 
-**Mekanisme:**
-1. `tasks.loop(minutes=10)` — snapshot semua role `is_assignable()`
-   (role non-`@everyone`, non-managed, di bawah posisi role bot) milik
-   tiap member, dikurangi `role_ids_to_ignore`, disimpan sebagai string
-   comma-separated ke tabel `user_ranks`.
-2. `on_member_join` — begitu member rejoin, role dari snapshot TERAKHIR
-   langsung di-assign ulang **tanpa validasi ulang apa pun** (tidak ada
-   approval staff, tidak ada cek apakah role itu baru saja dicabut
-   secara sengaja).
+**Diperkuat 2026-09-19 setelah review kedua** (baca langsung
+`rank_saver_cog.py` penuh + grep seluruh repo untuk `user_ranks`) —
+scope dan severity-nya lebih luas dari draft pertama. Detail di bawah
+ini menggantikan analisis awal.
 
-**Kenapa ini masalah nyata:**
+### 10.1 Mekanisme
 
-- `role_ids_to_ignore` di `rank_saver_settings.yml` **kosong (`[]`) —
-  sejak commit pertama, tidak pernah diisi**. `is_assignable()` cuma
-  cek hierarki posisi role, bukan "apakah role ini boleh
-  di-auto-restore". Akibatnya **role staff (`royal_guard`,
-  `prime_minister`) diperlakukan sama seperti role faction/kasta biasa**
-  — ikut ter-snapshot dan ikut ter-restore.
-- **Skenario eksploitasi konkret:**
-  ```
-  Staff cabut role (mis. demosi royal_guard) dari seorang member
-             ↓
-  Member leave (sendiri, atau di-kick — BUKAN di-ban)
-             ↓
-  Member rejoin dalam window ≤10 menit (sebelum snapshot berikutnya
-  sempat merekam pencabutan tadi)
-             ↓
-  on_member_join baca snapshot LAMA yang masih berisi role tsb
-             ↓
-  member.add_roles() otomatis, TANPA validasi ulang
-             ↓
-  Role yang baru dicabut (termasuk role staff) balik lagi
-  ```
-- **Ban** mencegah rejoin sehingga menghindari celah ini — tapi **kick**
-  atau sekadar mencabut role tanpa kick sama sekali tidak terlindungi.
+1. `tasks.loop(minutes=10)` (`rank_saver_cog.py:56`) — untuk **semua**
+   guild, **semua** member non-bot, snapshot **semua role yang dipegang
+   saat itu** yang lolos `role.is_assignable()` (bukan `@everyone`,
+   bukan managed/integration, posisinya di bawah role bot) dan bukan
+   anggota `role_ids_to_ignore`, disimpan sebagai string
+   comma-separated ke tabel `user_ranks` (`INSERT OR REPLACE`,
+   `rank_saver_cog.py:36-38,74-75`).
+2. `on_member_join` (`rank_saver_cog.py:78-99`, listener `rank_restorer`)
+   — begitu member join (rejoin apa pun bentuknya), role dari baris
+   snapshot TERAKHIR langsung di-assign ulang lewat `member.add_roles()`
+   **tanpa validasi ulang apa pun** — tidak ada approval staff, tidak
+   ada pengecekan apakah role itu baru saja dicabut secara sengaja,
+   tidak ada pembedaan jenis rejoin.
+
+### 10.2 Cakupan snapshot — semua role assignable, BUKAN cuma rank/tier
+
+`is_assignable()` tidak membedakan kategori role — dia cuma cek
+hierarki posisi. **Tidak ada filter berdasarkan jenis role** (rank vs
+staff vs faction vs achievement); semuanya diperlakukan identik.
+
+**Root cause bukan "lupa blacklist role staff".** Komentar di kode
+sendiri (`rank_saver_cog.py:66`) menyatakan niat aslinya:
+
+> *"Kumpulkan peran yang bisa disematkan dan bukan peran yang diabaikan
+> **(seperti mute/event khusus)**"*
+
+`role_ids_to_ignore` secara konsep dirancang untuk role **situasional**
+(mute, role event sementara) — bukan sebagai mekanisme exclude role
+administratif. Nama fitur (`RankSaver`, tabel `user_ranks`, docstring
+*"memulihkan seluruh kasta dan gelar kehormatan"*) mengisyaratkan niat
+produk soal rank/kasta/faction, tapi implementasinya tidak pernah
+benar-benar dibatasi ke kategori itu — role administratif sekadar tidak
+pernah dipertimbangkan sebagai kategori yang perlu dikecualikan sama
+sekali, bukan sengaja diikutsertakan maupun sengaja dikecualikan.
+**Klarifikasi kandidat root cause (belum diputuskan — fase *decide*,
+bukan bagian dari audit ini):**
+- **A.** Rank Saver seharusnya memang cuma untuk role rank/tier biasa
+  → exclusion role administratif jadi masuk akal.
+  **B.** Rank Saver memang dimaksudkan menyimpan semua role → maka
+  masalah utamanya bukan daftar exclude, tapi **snapshot tidak pernah
+  di-invalidate saat role berubah** (lihat 10.3).
+  Bukti kode (komentar baris 66) condong ke arah "niatnya sempit
+  (situasional), implementasinya lebar (semua role)" — bukan A murni
+  atau B murni.
+
+### 10.3 `user_ranks` tidak pernah dihapus — staleness TIDAK dibatasi 10 menit
+
+Grep seluruh repo (`grep -rn "user_ranks"`) mengonfirmasi: **tidak ada
+satu pun `DELETE FROM user_ranks`** di mana pun di codebase — tidak
+saat member leave, kick, maupun ban. Baris snapshot milik seorang
+member **membeku selamanya** begitu dia berhenti muncul di
+`guild.members` (karena loop `rank_saver` di baris 62-64 cuma
+mengiterasi member yang *sedang* ada di guild).
+
+Konsekuensinya, window kerentanan bukan "≤10 menit sejak leave" seperti
+draft awal, tapi:
+
+- **Syarat munculnya snapshot basi**: role dicabut DAN member berhenti
+  jadi anggota guild (leave/kick/ban) **sebelum tick 10-menit
+  berikutnya sempat merekam pencabutan itu**. Ini yang dibatasi 10
+  menit — bukan masa berlaku restorasinya.
+- **Masa berlaku snapshot basi setelah itu: tidak terbatas.** Snapshot
+  yang sudah telanjur membeku (masih berisi role yang sudah dicabut)
+  akan tetap dipakai persis apa adanya kapan pun member itu rejoin —
+  besok, minggu depan, atau bertahun-tahun kemudian — karena tidak ada
+  proses apa pun yang memperbarui atau membuang baris itu selama dia
+  tidak jadi anggota guild.
+
+### 10.4 `on_member_join` tidak membedakan jenis rejoin — termasuk ban → unban → rejoin
+
+Satu-satunya trigger restorasi adalah `on_member_join`, dan ia
+memperlakukan **setiap** kemunculan member sebagai kejadian yang sama:
+tidak ada informasi/parameter yang membedakan "rejoin rutin", "rejoin
+setelah kick", atau "rejoin setelah unban".
+
+- **Setelah kick**: berlaku — kick tidak mencegah rejoin.
+- **Setelah ban → unban → rejoin**: **juga berlaku**, dan ini bukan
+  cuma teori — karena baris `user_ranks` tidak pernah dihapus (10.3),
+  member yang di-ban (dengan role tertentu masih tersimpan di snapshot
+  terakhirnya) lalu di-unban dan rejoin di kemudian hari **tetap akan
+  mendapat role lamanya kembali** lewat mekanisme identik. **Ban cuma
+  MENUNDA eksposur ini selama status ban masih berlaku — bukan
+  menghilangkannya** — begitu ada unban, jalur restorasi yang sama
+  tetap aktif.
+- Tidak ada validasi konteks apa pun di jalur restore
+  (`rank_saver_cog.py:96-99`) — murni cek ulang `is_assignable()` +
+  ignore-list, lalu `member.add_roles()` tanpa syarat lain.
+
+### 10.5 Koreksi framing: ini bukan "kick bypass ban"
+
+Kick dan ban memang dua tindakan Discord yang berbeda secara sengaja
+(kick = boleh rejoin, ban = tidak boleh) — kick tidak "membajak" ban.
+**Masalah sesungguhnya ada di `rank_restorer`: dia tidak tahu dan tidak
+peduli KENAPA seseorang baru saja join.** Entah rejoin rutin, rejoin
+setelah kick, atau rejoin setelah unban, semuanya diperlakukan
+identik — "selamat datang kembali, ini role lamamu." Ban cuma
+kebetulan menunda trigger-nya (selama masih berlaku), bukan mencegahnya
+secara desain.
+
+### 10.6 Member terdampak bisa memicu sendiri tahap restorasi
+
+Leave lalu rejoin adalah aksi yang bisa dilakukan member mana pun
+dengan privilege paling dasar — tidak butuh akses istimewa apa pun.
+**Satu-satunya elemen yang butuh staff adalah pencabutan role di awal**
+— langkah restorasi 100% bisa dieksekusi sendiri oleh user yang
+terdampak, termasuk dengan sengaja mengatur waktu (langsung leave
+begitu role-nya dicabut, sebelum tick 10 menit berikutnya, lalu rejoin
+beberapa detik/menit kemudian).
+
+### 10.7 Role staff benar-benar termasuk, bukan kebetulan
+
+`royal_guard`/`prime_minister` adalah role biasa (bukan
+managed/integration), dan bot **harus** punya posisi role di atas
+keduanya di hierarki supaya fitur lain (mis. `/admin grant-member`,
+sistem membership) bisa berfungsi sama sekali. Jadi `is_assignable()`
+bernilai `True` untuk keduanya adalah konsekuensi struktural dari
+desain bot secara keseluruhan, bukan asumsi lemah/kebetulan.
+
+### 10.8 Catatan tambahan
+
 - `member.add_roles(*assignable_roles)` di jalur restore **tidak
-  dibungkus try/except apa pun** — beda dari listener lain di folder
-  ini yang semuanya defensif — kalau Discord API gagal di sini, error
-  akan lolos tak tertangani (crash-risk tambahan, bukan cuma isu
-  permission).
+  dibungkus try/except apa pun** (`rank_saver_cog.py:99`) — beda dari
+  listener lain di folder ini yang semuanya defensif. Kalau Discord API
+  gagal di sini, error lolos tak tertangani (crash-risk tambahan, di
+  luar isu permission).
 - Ini bukan regresi — perilaku ini **identik sejak commit pertama**
-  (`a4635c4`, 28 Jun), tidak pernah didokumentasikan sebagai known
-  tradeoff di komentar kode mana pun.
+  (`a4635c4`, 28 Jun; `git log -p --follow` mengonfirmasi tidak ada
+  perubahan logic sama sekali sejak saat itu, cuma rename path), tidak
+  pernah didokumentasikan sebagai known tradeoff di komentar kode mana
+  pun.
 
-**Klasifikasi:** privilege-restoration bug, prioritas setara/lebih
-tinggi dari temuan `/log_stats` — ini bukan cuma soal siapa bisa
-*melihat* data, tapi soal role (termasuk role staff) bisa **kembali
-otomatis** setelah sengaja dicabut, dalam window waktu yang nyata dan
-reprodusibel.
+### 10.9 Klasifikasi
+
+**Privilege-restoration / authorization integrity bug** — dipertahankan,
+BUKAN diturunkan jadi sekadar "permission bug". Ini bukan cuma soal
+siapa bisa *melihat* data, tapi soal state privilege (termasuk role
+staff) yang **secara eksplisit sudah diubah administrator bisa
+dihidupkan kembali secara otomatis**, dipicu sendiri oleh user
+terdampak, dengan masa berlaku eksposur yang tidak dibatasi waktu.
+
+**Belum diputuskan (fase *decide*, bukan bagian audit ini):** apakah
+solusinya exclude role administratif dari `role_ids_to_ignore` (mitigasi
+cepat, cuma menutup jalur INI — role lain yang dicabut secara
+administratif untuk alasan non-staff tetap punya masalah yang sama),
+atau redesain lifecycle snapshot supaya ter-invalidate saat role
+berubah (menjawab akar masalahnya, tapi lebih besar) — **jangan
+menganggap salah satu dari ini sebagai solusi final sampai fase decide
+selesai.**
 
 ---
 
@@ -257,7 +363,7 @@ Detail skema lengkap: `DATABASE_SCHEMA.md` §6. Ringkasan peran:
 | `bookmarks` | `bookmark_cog.py` | Pesan yang disimpan user via reaksi 🔖 |
 | `custom_roles` | `custom_role_cog.py` | 1 role kustom per user (Companion/Patron) |
 | `kneels` | `kneel_leaderboard_cog.py` | Skor kneel per pesan (live recount, bukan counter) |
-| `user_ranks` | `rank_saver_cog.py` | Snapshot role tiap 10 menit — **sumber celah §10** |
+| `user_ranks` | `rank_saver_cog.py` | Snapshot role, **baris tidak pernah dihapus** — sumber celah §10 |
 | `event_roles` | `event_roles_cog.py` | Role sementara per Scheduled Event, permission-less |
 | `daily_questions` | `daily_question_cog.py` | Pertanyaan harian hasil generate OpenAI |
 
@@ -282,7 +388,7 @@ Detail parameter per command: `COMMANDS.md` §6.
 | `voice_jtc_cog` | N/A (listener) | Overwrite di-scope benar per-channel |
 | `daily_question_cog` | N/A (tasks.loop) | Tidak ada trigger manual sama sekali |
 | `event_roles_cog` | Native Discord `Manage Events` | Role yang dibuat permission-less |
-| `rank_saver_cog` | N/A (tasks.loop + listener) | ⚠️ Lihat §10 — tidak ada re-validasi saat restore |
+| `rank_saver_cog` | N/A (tasks.loop + listener) | ⚠️ Lihat §10 — tidak ada re-validasi saat restore, eksposur tidak dibatasi waktu |
 
 ---
 
@@ -303,11 +409,17 @@ Detail parameter per command: `COMMANDS.md` §6.
 Diurutkan dari yang paling serius:
 
 **1. `rank_saver_cog.py` — role (termasuk role staff) bisa otomatis
-kembali setelah sengaja dicabut**, lewat window staleness ≤10 menit
-kalau member kick/leave lalu rejoin sebelum snapshot berikutnya
-(bagian 10). `role_ids_to_ignore` kosong sejak awal, tidak pernah
-mengecualikan `royal_guard`/`prime_minister`. **Privilege-restoration
-bug, belum diperbaiki — sengaja tidak disentuh di audit ini.**
+kembali setelah sengaja dicabut, dengan masa eksposur yang bisa tidak
+terbatas waktu** (bagian 10, diperkuat 2026-09-19 review kedua). Syarat
+munculnya snapshot basi dibatasi window ≤10 menit (role dicabut sebelum
+tick snapshot berikutnya), tapi **masa berlaku snapshot basi itu sendiri
+tidak terbatas** karena baris `user_ranks` tidak pernah dihapus — berlaku
+juga untuk rejoin setelah ban→unban, bisa dipicu sendiri oleh user
+terdampak lewat leave→rejoin. `role_ids_to_ignore` kosong sejak commit
+pertama; secara konsep dirancang untuk role situasional (mute/event),
+bukan exclude role administratif — jangan simpulkan root cause-nya
+sekadar "lupa blacklist staff". **Privilege-restoration/authorization
+integrity bug, belum diperbaiki — sengaja tidak disentuh di audit ini.**
 
 **2. `/kneelderboard` — cross-guild data exposure.** Parameter `guild_id`
 membolehkan query leaderboard server lain tanpa cek keanggotaan, hasil
@@ -339,12 +451,27 @@ rename ke `shared/*` (commit `e95d7f0`). Kosmetik, tidak fungsional.
 
 ## Riwayat Perubahan Signifikan
 
+- **2026-09-19** — §10 diperkuat lewat review kedua khusus
+  `rank_saver_cog.py` (dibaca penuh langsung + grep seluruh repo untuk
+  `user_ranks`). Perubahan material terhadap draft pertama: (1)
+  dikonfirmasi baris `user_ranks` tidak pernah dihapus di mana pun di
+  codebase — masa eksposur snapshot basi TIDAK dibatasi 10 menit,
+  cuma syarat *terjadinya* snapshot basi yang dibatasi window itu; (2)
+  dikonfirmasi ban→unban→rejoin juga memicu restorasi, bukan cuma
+  kick/leave; (3) koreksi framing "kick bypass ban" — masalah
+  sesungguhnya adalah `on_member_join` tidak membedakan jenis rejoin
+  sama sekali; (4) root cause diklarifikasi lewat komentar kode asli
+  (`role_ids_to_ignore` dirancang untuk role situasional/mute/event,
+  bukan exclude administratif) — blacklist staff dicatat sebagai
+  kandidat mitigasi, bukan solusi final, sampai fase *decide*
+  menentukan apakah Rank Saver seharusnya scope sempit (rank saja) atau
+  scope lebar dengan lifecycle invalidation yang lebih baik. Klasifikasi
+  privilege-restoration/authorization integrity bug dipertahankan.
 - **2026-09-19** — Dibuat dari nol. Dibaca penuh 9 file kode +
   `git log -p --follow` tiap file untuk mencari pola "restriction UI
   tidak ditegakkan" (sama seperti temuan `/log_stats`). Tidak ditemukan
   pola itu di 5 command (`/create_role` justru contoh yang BENAR
   menegakkan klaimnya). Ditemukan 1 privilege-restoration bug nyata di
-  `rank_saver_cog.py` (role staff bisa auto-restore lewat window
-  staleness kick/rejoin) dan 1 cross-guild data exposure di
+  `rank_saver_cog.py` dan 1 cross-guild data exposure di
   `/kneelderboard` — keduanya belum diperbaiki, sengaja tidak disentuh
   di audit ini.
