@@ -281,6 +281,51 @@ tiap finding: dokumen topik masing-masing. Status test: `tests/README.md`.
 
 ---
 
+## 11.5 Product/UX Gap Analysis (Sep 2026) — Evidence, Bukan Solusi
+
+Dianalisis lewat lensa 8-tahap perjalanan user (entry → first success →
+learning loop → progression → discovery → community → membership →
+return), murni dari dokumen yang sudah ada, tanpa buka kode/dokumen
+baru. Dua isu utama, ditulis sebagai *evidence + pertanyaan produk*,
+sengaja **bukan** rekomendasi solusi:
+
+**A. `/log` (inti loop immersion) digerbang `@is_vip()`** — Drifter
+(user gratis, baru masuk) tidak punya akses ke logging immersion sama
+sekali, bukan sekadar dibatasi (`IMMERSION_SYSTEM.md` §3, `COMMANDS.md` §3).
+Ini **candidate product gap dengan evidence implementasi kuat** —
+statusnya sebagai "gap" bergantung jawaban pertanyaan produk yang belum
+pernah dijawab eksplisit: *apakah immersion dimaksudkan jadi
+pengalaman inti yang harus tersedia gratis untuk newcomer, atau memang
+premium accelerator?*
+
+**B. Tegangan filosofi vs implementasi** — `MEMBERSHIP_SYSTEM.md` §1
+menyatakan "freemium = percepatan, bukan gembok — versi gratis harus
+tetap enak dipakai", tapi temuan A menunjukkan fitur paling
+"ekosistem" (bukan sekadar konten kamus) justru gembok total di level
+paling dasar. A dan B bukan dua temuan terpisah — keduanya satu
+pertanyaan besar: **apakah positioning freemium Kotabi konsisten
+dengan pengalaman first-user yang sesungguhnya?**
+
+**Pertanyaan untuk fase Product Decision** (belum dijawab, sengaja
+tidak diputuskan di sini):
+
+| Pertanyaan | Tujuan |
+|---|---|
+| Apa core loop gratis Kotabi? | Menentukan pengalaman dasar |
+| Apa yang sebenarnya dipercepat oleh premium? | Menentukan value membership |
+| Apakah immersion termasuk core loop? | Menentukan status `/log` |
+| Kalau gratis, apa batas premium-nya? | Menghindari "gembok" tanpa disadari |
+| Apa first success newcomer yang sesungguhnya? | Menentukan onboarding |
+
+Open question yang lebih lemah evidence-nya (dicatat, bukan
+diprioritaskan): kualitas `channel_guide`/`/info` sebagai mekanisme
+discovery belum diverifikasi; efektivitas `daily_question_cog` sebagai
+return-loop belum diverifikasi; 4 track progression paralel (kasta,
+achievement, leveling, faction) belum ada satu penjelasan yang
+mengikat — status UX gap, bukan bug.
+
+---
+
 ## 12. Open Decisions / Backlog
 
 Belum diputuskan — **jangan mulai fix sebelum ini diputuskan**, sesuai
