@@ -18,6 +18,7 @@ update dokumentasi.
 
 | File | Ngatur apa | Kapan buka |
 |---|---|---|
+| `KOTABI_SYSTEM_MAP.md` | **Sintesis sistem utuh** — Discord UX ↔ command ↔ fitur ↔ role ↔ database ↔ dependency lintas-fitur, gap/overlap/known-issue level sistem | Mau lihat gambaran besar Kotabi sebagai produk, bukan detail satu fitur — mulai dari sini sebelum ke dokumen topik |
 | `DEVELOPMENT_GUIDE.md` | Konvensi struktur folder/kode, aturan penamaan, checklist push, checklist ubah config yang berdampak user aktif, **protokol update dokumentasi** | Mau nambah/edit fitur apa pun; bingung dokumen mana yang relevan |
 | `COMMANDS.md` | Daftar lengkap semua slash command & prefix command lintas-fitur — parameter, level akses (decorator + in-body check), lokasi file, plus cog yang tidak punya command sama sekali | Mau tau command apa saja yang ada, siapa yang boleh pakai, atau cari lokasi kode command tertentu |
 | `IMMERSION_SYSTEM.md` | Mekanisme `/log`, achievement, goal, statistik, bar chart race, cache autocomplete AniList/VNDB/TMDB | Mau ubah poin/achievement/goal, atau debug fitur immersion apa pun |

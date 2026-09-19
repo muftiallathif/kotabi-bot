@@ -18,6 +18,21 @@ suatu perubahan wajib dicatat di sini vs cukup di dokumen topiknya saja.
 
 ## 2026
 
+- **19 Sep** — `KOTABI_SYSTEM_MAP.md` dibuat (belum pernah ada
+  sebelumnya) — sintesis dari 12 dokumen sumber yang sudah ada, tanpa
+  membaca kode baru. Menjawab "Kotabi sebagai produk Discord itu apa"
+  di satu tempat: Discord UX map, feature→command→channel→role,
+  cross-feature dependency (termasuk 1 dugaan baru yang belum
+  ditest — membership expiry ↔ rank_saver, pattern-matching dari
+  finding #3/#4), data/persistence map, permission model, documentation
+  coverage, system gaps, 7 known issues, overlap/duplication (3
+  implementasi terpisah untuk "authorized user"), backlog decide, dan
+  prioritas next-stage. Didaftarkan paling atas di `DOCS_INDEX.md`
+  sebagai entry point. Juga: `DEVELOPMENT_GUIDE.md` §14 ditambahkan —
+  prinsip baru supaya audit/testing granular tidak over-invest relatif
+  terhadap tujuan sintesis, ditulis eksplisit setelah sesi ini terasa
+  "tidak selesai-selesai" karena tiap dari 7 finding diperlakukan
+  seperti mini-project sendiri.
 - **19 Sep** — Reproduction test finding #2 ditambahkan
   (`tests/security/test_immersion_export_stats_permissions.py`, 10 test)
   — `/log_export`, `/logs`, `/log_stats` terhadap actor non-staff,
