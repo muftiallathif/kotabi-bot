@@ -362,6 +362,44 @@ harus dibuka.
 
 ---
 
+## 14. Jangan Over-Invest di Audit/Testing Granular Kalau Tujuannya Sintesis
+
+**Ditemukan dari pengalaman langsung** (audit dokumentasi 8 fitur +
+testing harness, Sep 2026): begitu pola audit→document→classify→
+decide→fix→test terbukti jalan di 1-2 kasus pertama, **nilai marginal
+mengulanginya persis sama untuk tiap finding berikutnya menurun
+cepat** — sementara biaya waktu tetap linear atau lebih. Itu bukan
+salah arah per langkah (tiap langkah individual masuk akal), tapi bisa
+jadi salah arah secara kumulatif kalau tujuan sebenarnya adalah
+**gambaran sistem secara utuh**, bukan menuntaskan tiap temuan sampai
+ke acceptance test.
+
+**Sinyal untuk berhenti eskalasi rigor dan pindah ke sintesis:**
+- Pola/metodologi sudah terbukti jalan di ≥1-2 contoh nyata (mis. test
+  harness sudah reproduce finding pertama dengan sukses) — mengulang
+  persis yang sama ke finding ke-3, ke-5, ke-7 dst boleh dipercepat
+  (dokumentasi minimal, tidak perlu review panjang tiap kali), bukan
+  di-skip, tapi juga tidak perlu seremonial sebesar yang pertama.
+- Tujuan yang dinyatakan user adalah **peta/gambaran/keputusan
+  prioritas**, bukan "selesaikan semua bug" — kalau begitu, temuan
+  yang sudah terverifikasi cukup masuk sebagai *Known Issues* di
+  dokumen sintesis, tidak perlu di-fix/acceptance-test dulu sebelum
+  lanjut ke sintesis.
+- User mulai bertanya "kok nggak selesai-selesai" — itu sinyal
+  eksplisit, jangan dianggap keluhan yang perlu "dijustifikasi lebih
+  jauh kenapa metodologinya benar". Tanya balik langkah mana yang
+  masih perlu presisi tinggi vs mana yang boleh dipercepat.
+
+**Yang tetap tidak boleh dikorbankan** biar cepat: jangan sampai
+"percepat" berarti berhenti verifikasi sebelum klaim (baca kode
+sebelum tulis dokumentasi/test tetap wajib — itu yang justru menangkap
+temuan nyata seperti `/log_export`/`/logs` non-ephemeral). Yang
+dipercepat itu *ritual pelaporannya* (commit message super panjang,
+review putaran kedua, dokumentasi tambahan tiap finding kecil) —
+bukan *verifikasi faktanya*.
+
+---
+
 *Dokumen ini dibuat saat migrasi struktur lama (`cogs/`, `lib/`,
 `config/` flat) menjadi feature-first. Kalau ada pertanyaan struktur di
 masa depan, tunjukkan file ini ke Claude di awal percakapan.*
