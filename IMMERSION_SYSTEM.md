@@ -433,11 +433,47 @@ TIDAK ADA satu pun yang benar-benar mengecek role staff:**
 Tidak ada satu pun dari ketiganya yang memanggil `has_staff_role()`/
 `is_staff()` dari `shared/checks.py`. Ini bukan salah tulis dokumentasi
 — UI Discord (`app_commands.describe`) benar-benar menjanjikan
-pembatasan yang tidak diimplementasikan. Perlu diputuskan: perbaiki
-kode supaya sesuai klaim (tambah `@is_staff()`/`in-body` check), atau
-perbaiki deskripsinya supaya sesuai kode aktual — **belum diperbaiki di
-audit ini, sengaja tidak disentuh** (lihat instruksi: jangan refactor
-sekarang).
+pembatasan yang tidak diimplementasikan.
+
+**Investigasi tambahan pada `/log_stats` (2026-09-19, sebelum
+diklasifikasikan)** — untuk memastikan ini bukan desain publik yang
+disengaja:
+
+- **Data yang ditampilkan bersifat personal, bukan agregat/anonim.**
+  Embed hasil punya field `"Warga"` berisi nama tampilan target user
+  (`stats_cog.py:290`), plus rincian aktivitas per media type, total
+  poin, bar chart, dan calendar heatmap — semuanya spesifik ke satu
+  `user_id` yang dipilih.
+- **Output TIDAK ephemeral** — `interaction.followup.send(file=file_bar,
+  embed=embed)` dan `interaction.followup.send(file=file_heatmap)`
+  (`stats_cog.py:303-304`) tanpa `ephemeral=True`. Siapa pun yang
+  menjalankan command ini terhadap warga lain, hasilnya **terpasang
+  publik di channel**, terlihat semua orang — bukan cuma terlihat
+  pemanggil.
+- **Cek riwayat git** (`git log -p --follow -- stats_cog.py`): teks
+  "Khusus Staf" sudah ada sejak **commit pertama** yang menambahkan
+  `/log_stats` — tidak pernah ada `@is_staff()`/pengecekan staff apa pun
+  di riwayat file ini yang kemudian dihapus. Bukan kasus "gate pernah
+  ada lalu ke-hapus", tapi "gate tidak pernah diimplementasikan sejak
+  awal".
+
+**Kesimpulan klasifikasi:** kombinasi (data personal ditampilkan
+by-name + output publik/non-ephemeral + teks "Khusus Staf" sudah ada
+sejak commit pertama tanpa implementasi yang pernah menyertainya)
+membuat ini **jauh lebih mungkin oversight implementasi (bug
+permission) daripada keputusan desain publik yang disengaja** — kalau
+memang sengaja publik, tidak ada alasan menulis "Khusus Staf" sejak
+awal. `/log_stats` dinilai **sama seriusnya dengan `/log_export`/`/logs`,
+bahkan lebih berisiko** karena hasilnya otomatis dipublikasikan ke
+channel, bukan sekadar bisa "dibaca" oleh pemanggil.
+
+Perlu diputuskan (belum diputuskan di audit ini): perbaiki kode supaya
+sesuai klaim (tambah `@is_staff()`/`in-body` check + pertimbangkan
+`ephemeral=True` untuk `/log_stats` kalau target bukan diri sendiri),
+atau perbaiki deskripsinya supaya sesuai kode aktual kalau memang mau
+dibuat publik — **belum diperbaiki di audit ini, sengaja tidak
+disentuh** (lihat instruksi: jangan refactor sekarang). Status:
+security/permission bug, backlog terpisah.
 
 **2. Bug format URL di `get_source_url()`** (`log_cog.py:351-362`) —
 untuk media type "Listening Time", kalau lookup tipe TMDB (movie/tv)
@@ -470,6 +506,13 @@ bug fungsional.
 
 ## Riwayat Perubahan Signifikan
 
+- **2026-09-19** — §14 diperkuat: `/log_stats` diinvestigasi lebih
+  lanjut (bukan cuma disimpulkan dari teks "Khusus Staf") — dikonfirmasi
+  menampilkan data personal by-name, hasil non-ephemeral (publik di
+  channel), dan lewat `git log -p` dikonfirmasi teks "Khusus Staf" ada
+  sejak commit pertama tanpa gate yang pernah diimplementasikan.
+  Diklasifikasikan ulang dari "perlu keputusan" jadi security/permission
+  bug — status tetap belum diperbaiki (audit ini bukan fase fix).
 - **2026-09-19** — Dibuat dari nol. Dibaca penuh 9 file kode +
   `immersion_log_settings.yml`. Ditemukan 3 command (`log_export`,
   `logs`, `log_stats`) dengan label UI "Khusus Staf" yang tidak

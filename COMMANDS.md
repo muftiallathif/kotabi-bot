@@ -90,7 +90,7 @@ Detail alur kuis, anti-cheat, cooldown, journey system: `GATEKEEPER_QUIZ_SYSTEM.
 | `/logs` | `user?` | `@is_vip()` — deskripsi UI bilang "Khusus Staf", **TIDAK ditegakkan di kode** ⚠️ | Ekspor riwayat log sebagai dokumen `.txt` | `log_cog.py:478` |
 | `/log_leaderboard` | `media_type?`, `month?` | `@is_vip()` | Leaderboard keaktifan bulan ini (atau bulan/tipe media pilihan) | `log_cog.py:511` |
 | `/log_race` | `from_date`, `to_date`, `media_type?`, `race_type?='points'` | terbuka (cooldown 300 detik, admin exempt) | Video bar chart race progress immersion | `bar_races_cog.py:127` |
-| `/log_stats` | `user?`, `from_date?`, `to_date?`, `immersion_type?` | **terbuka — deskripsi UI parameter `user` bilang "Khusus Staf", TIDAK ADA gate sama sekali di kode** ⚠️ | Grafik bar chart + heatmap statistik immersion | `stats_cog.py:229` |
+| `/log_stats` | `user?`, `from_date?`, `to_date?`, `immersion_type?` | **terbuka — deskripsi UI parameter `user` bilang "Khusus Staf", TIDAK ADA gate sama sekali di kode, DAN hasil dikirim non-ephemeral (publik di channel)** ⚠️⚠️ | Grafik bar chart + heatmap statistik immersion (menampilkan nama & data personal target user) | `stats_cog.py:229` |
 | `/log_set_goal` | `media_type`, `goal_type`, `goal_value`, `end_date_or_hours`, `start_date?` | `@is_vip()` | Pasang target belajar | `goals_cog.py:133` |
 | `/log_remove_goal` | `goal_entry` | `@is_vip()` | Hapus satu target belajar | `goals_cog.py:208` |
 | `/log_view_goals` | `member?` | `@is_vip()` | Lihat target belajar (sendiri atau warga lain) | `goals_cog.py:234` |
