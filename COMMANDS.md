@@ -81,23 +81,26 @@ Detail alur kuis, anti-cheat, cooldown, journey system: `GATEKEEPER_QUIZ_SYSTEM.
 
 ## 3. Immersion (`features/immersion/`)
 
-**Belum ada dokumen topik untuk fitur ini** — lihat catatan gap di
-bagian akhir dokumen ini.
-
 | Command | Parameter | Akses | Ringkasan | Lokasi |
 |---|---|---|---|---|
 | `/log` | `media_type`, `amount`, `name?`, `comment?`, `backfill_date?` | `@is_vip()` | Catat aktivitas immersion, dapat poin | `log_cog.py:167` |
 | `/log_undo` | `log_entry` | `@is_vip()` | Batalkan satu entri log | `log_cog.py:364` |
 | `/log_achievements` | — | `@is_vip()` | Lihat lencana pencapaian | `log_cog.py:405` |
-| `/log_export` | `user?` | `@is_vip()` | Ekspor riwayat log sebagai CSV | `log_cog.py:442` |
-| `/logs` | `user?` | `@is_vip()` | Ekspor riwayat log sebagai dokumen `.txt` | `log_cog.py:478` |
+| `/log_export` | `user?` | `@is_vip()` — deskripsi UI bilang "Khusus Staf", **TIDAK ditegakkan di kode** ⚠️ | Ekspor riwayat log sebagai CSV | `log_cog.py:442` |
+| `/logs` | `user?` | `@is_vip()` — deskripsi UI bilang "Khusus Staf", **TIDAK ditegakkan di kode** ⚠️ | Ekspor riwayat log sebagai dokumen `.txt` | `log_cog.py:478` |
 | `/log_leaderboard` | `media_type?`, `month?` | `@is_vip()` | Leaderboard keaktifan bulan ini (atau bulan/tipe media pilihan) | `log_cog.py:511` |
 | `/log_race` | `from_date`, `to_date`, `media_type?`, `race_type?='points'` | terbuka (cooldown 300 detik, admin exempt) | Video bar chart race progress immersion | `bar_races_cog.py:127` |
-| `/log_stats` | `user?`, `from_date?`, `to_date?`, `immersion_type?` | terbuka | Grafik bar chart + heatmap statistik immersion | `stats_cog.py:229` |
+| `/log_stats` | `user?`, `from_date?`, `to_date?`, `immersion_type?` | **terbuka — deskripsi UI parameter `user` bilang "Khusus Staf", TIDAK ADA gate sama sekali di kode** ⚠️ | Grafik bar chart + heatmap statistik immersion | `stats_cog.py:229` |
 | `/log_set_goal` | `media_type`, `goal_type`, `goal_value`, `end_date_or_hours`, `start_date?` | `@is_vip()` | Pasang target belajar | `goals_cog.py:133` |
 | `/log_remove_goal` | `goal_entry` | `@is_vip()` | Hapus satu target belajar | `goals_cog.py:208` |
 | `/log_view_goals` | `member?` | `@is_vip()` | Lihat target belajar (sendiri atau warga lain) | `goals_cog.py:234` |
 | `/log_clear_goals` | — | `@is_vip()` | Bersihkan target belajar yang sudah kedaluwarsa | `goals_cog.py:262` |
+
+⚠️ = gap keamanan/dokumentasi nyata, ditemukan saat audit 19 Sep — belum
+diperbaiki (bukan refactor sekarang). Detail lengkap: `IMMERSION_SYSTEM.md` §14.
+
+Detail lengkap mekanisme (poin, achievement, goal, statistik, race,
+cache API eksternal): `IMMERSION_SYSTEM.md`.
 
 ---
 
@@ -260,6 +263,11 @@ seluruh repo).
 
 ## Riwayat Perubahan Signifikan
 
+- **2026-09-19** — Section Immersion ditandai ⚠️ pada `/log_export`,
+  `/logs`, `/log_stats` — deskripsi UI ketiganya mengklaim "Khusus Staf"
+  untuk parameter `user`, tapi audit `IMMERSION_SYSTEM.md` menemukan
+  tidak ada pengecekan staff di kode sama sekali. Link ditambahkan ke
+  `IMMERSION_SYSTEM.md` yang baru dibuat.
 - **2026-09-19** — Dibuat dari nol. Grep seluruh `features/*/*_cog.py`
   untuk `@app_commands.command`/`Group.command`/`@commands.command`,
   tiap command diverifikasi satu-satu ke `async def` aslinya (parameter,

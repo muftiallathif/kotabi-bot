@@ -18,6 +18,18 @@ suatu perubahan wajib dicatat di sini vs cukup di dokumen topiknya saja.
 
 ## 2026
 
+- **19 Sep** — `IMMERSION_SYSTEM.md` dibuat (belum pernah ada
+  sebelumnya). Dibaca penuh `log_cog.py`, `goals_cog.py`, `stats_cog.py`,
+  `bar_races_cog.py`, `support/`, dan `immersion_log_settings.yml`.
+  Ditemukan gap keamanan/dokumentasi nyata: `/log_export`, `/logs`,
+  `/log_stats` mengklaim "Khusus Staf" di UI tapi tidak ada pengecekan
+  staff di kode — belum diperbaiki, sengaja tidak di-refactor. Juga
+  ditemukan 1 bug format URL (`get_source_url()`, placeholder
+  `{tmdb_media_type}` tidak ke-format saat lookup TMDB gagal) dan
+  beberapa asimetri desain (backfill 7 hari vs undo tanpa batas usia;
+  goal completion vs expiry tidak dibedakan saat `/log_clear_goals`).
+  `COMMANDS.md` diupdate dengan tanda ⚠️ pada 3 command tsb. Detail:
+  `IMMERSION_SYSTEM.md` §14.
 - **19 Sep** — `COMMANDS.md` dibuat (belum pernah ada sebelumnya).
   Grep seluruh `features/*/*_cog.py`, 44 slash command + 4 command
   group (13 subcommand) + 5 prefix command diverifikasi satu-satu ke
