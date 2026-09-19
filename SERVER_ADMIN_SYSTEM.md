@@ -110,13 +110,77 @@ API. **Tidak ada satu tabel pun yang dikecualikan.**
   (baris 64) — ephemeral jadi risiko rendah sendirian, tapi
   bertumpuk dengan gap gate di atas. Kelas: **code bug** (minor).
 
-### 2.5 Klasifikasi
+### 2.5 Verifikasi Ulang (2026-09-19, sebelum dikunci sebagai temuan final)
 
-**Authorization gap (regresi)** — kategori paling serius yang
-ditemukan di seluruh rangkaian audit ini, karena (a) ini bukan "lupa
-menambah check" seperti temuan lain, tapi **secara aktif melemahkan
-check yang tadinya benar**, dan (b) blast radius-nya seluruh database,
-bukan data satu fitur.
+Diverifikasi langsung ke kode/git (bukan cuma dari laporan agen audit)
+terhadap 6 hal, sebelum temuan ini dianggap final:
+
+1. **Diff commit `bb3b698` dibaca penuh** (`git show bb3b698 --
+   'features/server_admin/*database_backup_cog.py'
+   'features/server_admin/backup_database_cog.py'`) — total perubahan
+   untuk file ini di commit itu cuma 10 baris, dan **seluruhnya** ada
+   di blok decorator + rename fungsi (`post_db`→`backup_database`,
+   `has_permissions()`→`default_permissions()`). Tidak ada baris lain
+   yang berubah — **tidak ada check yang dipindah ke helper/service
+   mana pun**, murni dihapus.
+2. **Seluruh file (79 baris) dibaca ulang penuh** — `create_temporary_gzip_file()`
+   cuma fungsi utilitas gzip, nol logic otorisasi. Alur command:
+   `defer()` → panggil fungsi itu → kirim file, dibungkus try/except
+   generik. **Tidak ada check tersembunyi di call chain mana pun.**
+3. **Perbandingan langsung baris-ke-baris dengan `backup_discord_cog.py`**
+   — decorator dikonfirmasi **persis sama**
+   (`@app_commands.guild_only()` + `@app_commands.default_permissions(administrator=True)`,
+   `backup_discord_cog.py:170-171`), tapi `backup_discord_cog.py`
+   punya `if not _is_authorized(interaction.user): return ...` sebagai
+   baris pertama badan fungsinya (`backup_discord_cog.py:176`).
+   `backup_database_cog.py` tidak punya padanan apa pun untuk baris
+   itu.
+4. **Scope data dikonfirmasi lengkap ke `DATABASE_SCHEMA.md`**, bukan
+   disimpulkan: termasuk `orders` (`payment_proof_url`,
+   `payment_phash`, `sender_bank`, `unique_code`),
+   `membership_history_v1` (`actor`, `reason`, before/after tier/expiry/
+   poin lengkap), `memberships`, `logs` (aktivitas immersion),
+   `user_ranks`, `custom_roles`, `kneels`, `active_mutes`, dan seluruh
+   tabel lintas-fitur lain. **Koreksi presisi:** konfigurasi (file
+   `.yml` seperti `server_map.yml`, `membership_settings.yml`) **TIDAK
+   ikut** — itu hidup di filesystem, bukan di `db.sqlite3`, jadi tidak
+   ter-backup lewat command ini.
+5. **Arti faktual `default_permissions` dikonfirmasi**: ini metadata
+   yang dikirim ke Discord saat command di-sync, dipakai Discord untuk
+   menentukan default akses di client — tapi **admin guild (siapa pun
+   yang punya izin edit Integration di server itu) bisa mengubah siapa
+   boleh menjalankan command ini kapan saja lewat Server Settings,
+   independen dari kode bot**. Penegakannya terjadi di sisi Discord,
+   SEBELUM interaction sampai ke bot — bot tidak menerima informasi
+   permission apa pun untuk diverifikasi ulang saat interaction
+   diterima.
+6. **Pertanyaan inti dijawab langsung**: kalau seorang member biasa
+   berhasil memperoleh izin invoke (lewat konfigurasi Integration
+   guild), apakah bot sendiri punya jalur penolakan? **Tidak** —
+   dikonfirmasi lewat grep `core/bot.py` + `main.py` untuk
+   `interaction_check`/`on_check_failure`/`tree.check`/`CommandTree`/
+   `app_commands.check(` apa pun: nihil hasil. Tidak ada backstop di
+   level bot sama sekali, untuk command mana pun, bukan cuma yang ini.
+
+**Severity & exploitability — wording final (disengaja presisi):** Bot
+tidak lagi memiliki backstop authorization sendiri untuk command ini;
+penegakan sepenuhnya bergantung pada konfigurasi permission command di
+sisi Discord masing-masing guild. **Ini BUKAN klaim bahwa command ini
+pasti bisa dijalankan member biasa di sembarang guild** — exploitability
+sesungguhnya bergantung pada bagaimana admin guild yang bersangkutan
+mengonfigurasi Integration permission untuk command ini, yang bisa
+berbeda-beda per guild dan tidak diverifikasi di audit ini. Yang pasti
+dan tidak bergantung konfigurasi guild mana pun: **kode bot sendiri
+tidak lagi menjadi bagian dari pertahanan itu.**
+
+### 2.6 Klasifikasi
+
+**Authorization gap (regresi) — dikunci sebagai temuan final.**
+Kategori paling serius yang ditemukan di seluruh rangkaian audit ini,
+karena (a) ini bukan "lupa menambah check" seperti temuan lain, tapi
+**secara aktif melemahkan check yang tadinya benar dan ditegakkan
+backend**, dan (b) blast radius-nya seluruh database, bukan data satu
+fitur.
 
 ---
 
@@ -348,6 +412,19 @@ tetap melaporkan sukses.
 
 ## Riwayat Perubahan Signifikan
 
+- **2026-09-19** — §2 diperkuat lewat review kedua khusus
+  `/backup_database` sebelum temuan dikunci final (diff commit `bb3b698`
+  dibaca penuh, file 79 baris dibaca ulang, perbandingan baris-ke-baris
+  dengan `backup_discord_cog.py`, scope data dikonfirmasi ke
+  `DATABASE_SCHEMA.md`, dan dikonfirmasi tidak ada backstop
+  `interaction_check`/tree-level apa pun di `core/bot.py`/`main.py`).
+  Wording severity diperhalus supaya presisi: bot tidak lagi punya
+  backstop sendiri (fakta, tidak bergantung konfigurasi), tapi
+  exploitability aktual bergantung konfigurasi Integration tiap guild
+  (tidak diklaim "pasti bisa dieksploitasi member biasa di semua
+  guild"). Koreksi kecil: konfigurasi `.yml` tidak ikut ter-backup
+  (cuma `db.sqlite3`). Temuan dikunci sebagai final — authorization
+  gap (regresi), prioritas tertinggi.
 - **2026-09-19** — Dibuat dari nol. Dibaca penuh 3 file (628 baris) +
   `git log -p --follow`/`git show` tiap file untuk mencari check yang
   pernah dihapus/dilemahkan — dan ditemukan satu: `/backup_database`
