@@ -176,8 +176,8 @@ diam-diam melakukan fase *decide* yang belum pernah didiskusikan.
 |---|---|---|---|---|---|
 | 1 | `/backup_database` authorization regression | `SERVER_ADMIN_SYSTEM.md` §2 | ✅ | ✅ | N/A |
 | 2 | `/log_export`/`/logs`/`/log_stats` "Khusus Staf" tidak ditegakkan + non-ephemeral | `IMMERSION_SYSTEM.md` §14 | ✅ | ✅ | N/A |
-| 3 | `rank_saver` — role staff auto-restore | `SOCIAL_SYSTEM.md` §10 | ⏳ | N/A | ⏳ (scope A/B belum diputuskan) |
-| 4 | `rank_saver` ↔ `/selfmute` | `MODERATION_SYSTEM.md` §4 | ⏳ | N/A | ⏳ |
+| 3 | `rank_saver` — role staff auto-restore | `SOCIAL_SYSTEM.md` §10 | N/A | N/A | ✅ (cuma invariant "role revoked tidak boleh balik", bukan scope A/B) |
+| 4 | `rank_saver` ↔ `/selfmute` | `MODERATION_SYSTEM.md` §4 | N/A | N/A | ✅ |
 | 5 | `/solved` tanpa otorisasi | `MODERATION_SYSTEM.md` §2 | ⏳ | ⏳ | N/A |
 | 6 | `/kneelderboard` cross-guild | `SOCIAL_SYSTEM.md` §3 | ⏳ | ⏳ | N/A (scope belum diputuskan) |
 | 7 | `/say` permission laundering via `channel` | `SERVER_ADMIN_SYSTEM.md` §4.4 | ⏳ | ⏳ | N/A |
