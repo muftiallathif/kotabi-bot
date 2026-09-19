@@ -141,19 +141,18 @@ Harga tier: `PRICING_SYSTEM_REFACTOR.md`.
 
 | Command | Parameter | Akses | Ringkasan | Lokasi |
 |---|---|---|---|---|
-| `/solved` | — | terbuka | Tandai thread forum bantuan sebagai selesai | `thread_resolver_cog.py:48` |
-| `/selfmute` | `hours?=0`, `minutes?=0` | `guild_only` saja; role yang boleh dipilih dibatasi `in-body` dari `selfmute_settings.yml` | Bisukan diri sendiri untuk durasi tertentu | `selfmute_cog.py:135` |
+| `/solved` | — | **terbuka, TIDAK ADA pengecekan kepemilikan/staff sama sekali** ⚠️ | Tandai thread forum bantuan sebagai selesai | `thread_resolver_cog.py:48` |
+| `/selfmute` | `hours?=0`, `minutes?=0` | `guild_only` saja; `allowed_ids` di `selfmute_settings.yml` = SIAPA boleh memanggil command ini (bukan role mana yang boleh dipilih) | Bisukan diri sendiri untuk durasi tertentu — ⚠️ bisa dibatalkan lewat leave-rejoin (lihat `MODERATION_SYSTEM.md` §4) | `selfmute_cog.py:135` |
 | `/unmute_user` | `member` | admin | Unmute paksa warga lain, pulihkan role tersimpan | `selfmute_cog.py:90` |
 | `/check_mute` | — | terbuka | Cek status mute sendiri, auto-unmute kalau sudah lewat | `selfmute_cog.py:210` |
 | `/sticky_last_message` | — | admin (`manage_messages`) | Jadikan pesan terakhir sebagai sticky message | `sticky_messages_cog.py:59` |
 | `/unsticky` | — | admin (`manage_messages`) | Hapus sticky message dari channel ini | `sticky_messages_cog.py:86` |
 
 **Cog tanpa command** (background task murni): `quiz_forum_cog.py` — auto-archive
-thread latihan `quiz-public` yang tidak aktif (default tiap 1 jam, lihat
-`GATEKEEPER_QUIZ_SYSTEM.md` §8).
+thread latihan `quiz-public` yang tidak aktif (default tiap 1 jam, dicek
+aman terhadap `practice_cog.py` — lihat `MODERATION_SYSTEM.md` §6).
 
-**Belum ada dokumen topik konsolidasi untuk fitur ini** — cooldown
-`selfmute` dan alur `/solved` cuma tersebar di komentar kode.
+Detail lengkap mekanisme + temuan keamanan: `MODERATION_SYSTEM.md`.
 
 ---
 
@@ -262,6 +261,12 @@ seluruh repo).
 
 ## Riwayat Perubahan Signifikan
 
+- **2026-09-19** — Section Moderation ditandai ⚠️ pada `/solved`
+  (tidak ada pengecekan otorisasi sama sekali) dan `/selfmute` (bisa
+  dibatalkan lewat interaksi dengan `rank_saver_cog.py`). Klarifikasi
+  arti `allowed_ids` diperbaiki (mengatur siapa boleh memanggil
+  command, bukan role mana yang boleh dipilih). Link ditambahkan ke
+  `MODERATION_SYSTEM.md` yang baru dibuat.
 - **2026-09-19** — Section Social ditandai ⚠️ pada `/kneelderboard`
   (cross-guild query tanpa cek keanggotaan) dan `rank_saver_cog.py`
   (role staff bisa auto-restore setelah dicabut). Link ditambahkan ke

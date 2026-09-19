@@ -18,6 +18,22 @@ suatu perubahan wajib dicatat di sini vs cukup di dokumen topiknya saja.
 
 ## 2026
 
+- **19 Sep** — `MODERATION_SYSTEM.md` dibuat (belum pernah ada
+  sebelumnya). Dibaca penuh 4 file `features/moderation/` + 2 config +
+  `git log -p --follow` tiap file, plus cross-check eksplisit ke
+  `rank_saver_cog.py` (social) dan `practice_cog.py` (gatekeeper) sesuai
+  permintaan audit lintas-fitur. Ditemukan: `/solved` tanpa pengecekan
+  otorisasi sama sekali (bisa dipalsukan lewat rename thread tanpa
+  command); interaksi nyata `rank_saver_cog.py` ↔ `/selfmute` yang bisa
+  membatalkan mute lewat leave-rejoin dalam window ≤10 menit —
+  diklasifikasikan terpisah dari temuan role staff sebelumnya sebagai
+  *moderation enforcement integrity* (bukan *authorization integrity*),
+  walau root cause sama; race condition di `/sticky_last_message`.
+  Klarifikasi: `allowed_ids` di `selfmute_settings.yml` mengatur siapa
+  boleh memanggil `/selfmute`, bukan role mana yang boleh dipilih —
+  koreksi atas kesimpulan awal di `COMMANDS.md`. `COMMANDS.md`/
+  `DOCS_INDEX.md` diupdate. Documentation-only. Detail:
+  `MODERATION_SYSTEM.md` §10.
 - **19 Sep** — `SOCIAL_SYSTEM.md` §10 diperkuat lewat review kedua
   khusus `rank_saver_cog.py` (dibaca penuh + grep seluruh repo untuk
   `user_ranks`). Perubahan material: baris `user_ranks` dikonfirmasi

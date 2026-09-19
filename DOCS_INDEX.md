@@ -22,6 +22,7 @@ update dokumentasi.
 | `COMMANDS.md` | Daftar lengkap semua slash command & prefix command lintas-fitur — parameter, level akses (decorator + in-body check), lokasi file, plus cog yang tidak punya command sama sekali | Mau tau command apa saja yang ada, siapa yang boleh pakai, atau cari lokasi kode command tertentu |
 | `IMMERSION_SYSTEM.md` | Mekanisme `/log`, achievement, goal, statistik, bar chart race, cache autocomplete AniList/VNDB/TMDB | Mau ubah poin/achievement/goal, atau debug fitur immersion apa pun |
 | `SOCIAL_SYSTEM.md` | Mekanisme `/info`, `/kneelderboard`, `/bookmarks`, `/create_role`, auto-role, voice join-to-create, pertanyaan harian AI, role event, snapshot/restore role | Mau ubah fitur social apa pun, atau debug kenapa role balik sendiri setelah dicabut |
+| `MODERATION_SYSTEM.md` | Mekanisme `/solved`, `/selfmute`, `/unmute_user`, `/sticky_last_message`, auto-archive thread, interaksi dengan `rank_saver_cog.py` | Mau ubah fitur moderation apa pun, atau debug kenapa mute bisa batal sendiri |
 | `PERMISSION_MATRIX.md` | Permission channel & role lintas-fitur (siapa bisa lihat/kirim di channel mana) | Mau ubah akses channel, role baru, atau `/permission`/`/structure` |
 | `MEMBERSHIP_SYSTEM.md` | Alur `/subscribe`, anti-fraud bukti transfer, command admin, scheduler, skema tabel membership, cara nambah produk, keputusan strategi final | Mau ubah alur pembelian, tier, admin command membership |
 | `PRICING_SYSTEM_REFACTOR.md` | Harga tier VIP (Traveler/Companion/Patron + varian 6bln/1thn), cara ganti harga lewat preset, riwayat audit dead config | Mau ganti harga, nambah/ubah preset, atau cari tau kenapa suatu field harga dihapus |
@@ -76,10 +77,11 @@ tempat lain (lihat alasan di atas).
 
 ## Gap Terbuka (ditemukan lewat audit 2026-09-19, belum dikerjakan)
 
-**Update 19 Sep:** `IMMERSION_SYSTEM.md` dan `SOCIAL_SYSTEM.md` sudah
-dibuat (lihat tabel di atas) — dicoret dari daftar di bawah. Kedua audit
-menemukan gap keamanan/dokumentasi nyata yang **belum diperbaiki**
-(sengaja, lihat prinsip audit→document→classify→decide→fix→test):
+**Update 19 Sep:** `IMMERSION_SYSTEM.md`, `SOCIAL_SYSTEM.md`, dan
+`MODERATION_SYSTEM.md` sudah dibuat (lihat tabel di atas) — dicoret
+dari daftar di bawah. Ketiga audit menemukan gap keamanan/dokumentasi
+nyata yang **belum diperbaiki** (sengaja, lihat prinsip
+audit→document→classify→decide→fix→test):
 
 - 3 command immersion (`log_export`, `logs`, `log_stats`) mengklaim
   "Khusus Staf" di UI tapi tidak ditegakkan di kode —
@@ -90,13 +92,20 @@ menemukan gap keamanan/dokumentasi nyata yang **belum diperbaiki**
   untuk rejoin setelah ban→unban — `SOCIAL_SYSTEM.md` §10, §14.
 - `/kneelderboard` (social) membolehkan query leaderboard server
   Discord lain tanpa cek keanggotaan — `SOCIAL_SYSTEM.md` §3, §14.
+- `/solved` (moderation) tidak punya pengecekan otorisasi sama sekali,
+  dan bisa dipalsukan lewat rename thread tanpa command —
+  `MODERATION_SYSTEM.md` §2, §10.
+- **`rank_saver_cog.py` juga bisa membatalkan `/selfmute`** lewat
+  leave-rejoin dalam window ≤10 menit — root cause sama dengan temuan
+  role staff di atas, tapi diklasifikasikan terpisah sebagai
+  *moderation enforcement integrity* (bukan *authorization integrity*)
+  karena dampaknya berbeda (membatalkan sanksi, bukan memulihkan
+  privilege) — `MODERATION_SYSTEM.md` §4, §10.
 
 Fitur berikut **masih belum punya dokumen topik sama sekali** — cuma
 terdokumentasi sebagian lewat `COMMANDS.md` (daftar command-nya saja,
 bukan business logic) atau tersebar di komentar kode:
 
-- **Moderation** (`features/moderation/`) — 6 command + 1 cog background
-  (`quiz_forum_cog.py`), tidak ada `MODERATION_SYSTEM.md`.
 - **Server Admin** non-permission (`backup_database_cog.py`,
   `backup_discord_cog.py`, `say_cog.py`) — bagian permission/structure
   sudah tercakup `PERMISSION_MATRIX.md`, tapi fungsi backup & `/say`
