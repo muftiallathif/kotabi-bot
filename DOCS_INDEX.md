@@ -14,6 +14,25 @@ update dokumentasi.
 
 ---
 
+## Klasifikasi Konseptual (bukan struktur folder — semua tetap di root)
+
+Dokumen di bawah beda **fungsi**, bukan cuma beda topik — berguna
+untuk tahu "dokumen jenis apa yang saya cari", bukan cuma "dokumen
+mana". Ini murni peta mental, **bukan rencana pindah folder** — kalau
+suatu saat navigasi flat-root ini benar-benar terasa mengganggu, baru
+evaluasi struktur `docs/` (lihat `DEVELOPMENT_GUIDE.md` §14 soal jangan
+mengerjakan reorganisasi sebelum ada sinyal nyata butuh).
+
+| Kategori | Dokumen | Menjawab pertanyaan |
+|---|---|---|
+| **Entry point / navigasi** | `README.md`, `KOTABI_SYSTEM_MAP.md`, `DOCS_INDEX.md`, `DEVELOPMENT_GUIDE.md` | "Apa ini / dari mana mulai / ke mana cari / aturan main apa" |
+| **Feature & system docs** | `MEMBERSHIP_SYSTEM.md`, `IMMERSION_SYSTEM.md`, `SOCIAL_SYSTEM.md`, `MODERATION_SYSTEM.md`, `SERVER_ADMIN_SYSTEM.md`, `DICTIONARY_SYSTEM.md`, `GATEKEEPER_QUIZ_SYSTEM.md`, `PRICING_SYSTEM_REFACTOR.md` | "Bagaimana fitur X bekerja" |
+| **Technical / interface reference** | `COMMANDS.md`, `DATABASE_SCHEMA.md`, `PERMISSION_MATRIX.md` | "Apa persisnya command/tabel/permission ini" |
+| **Operations** | `DEPLOYMENT.md`, `CHANGELOG.md` | "Bagaimana menjalankan/melacak sejarah perubahan project" (`CHANGELOG.md` = riwayat proyek, bukan spesifikasi fitur — jangan disamakan dengan feature docs) |
+| **Testing** | `tests/README.md` | "Apa yang sudah dibuktikan reproducible, apa yang belum" |
+
+---
+
 ## Dokumen Aktif (sumber kebenaran saat ini)
 
 | File | Ngatur apa | Kapan buka |
