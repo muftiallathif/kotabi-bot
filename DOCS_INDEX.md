@@ -19,6 +19,7 @@ update dokumentasi.
 | File | Ngatur apa | Kapan buka |
 |---|---|---|
 | `DEVELOPMENT_GUIDE.md` | Konvensi struktur folder/kode, aturan penamaan, checklist push, checklist ubah config yang berdampak user aktif, **protokol update dokumentasi** | Mau nambah/edit fitur apa pun; bingung dokumen mana yang relevan |
+| `COMMANDS.md` | Daftar lengkap semua slash command & prefix command lintas-fitur — parameter, level akses (decorator + in-body check), lokasi file, plus cog yang tidak punya command sama sekali | Mau tau command apa saja yang ada, siapa yang boleh pakai, atau cari lokasi kode command tertentu |
 | `PERMISSION_MATRIX.md` | Permission channel & role lintas-fitur (siapa bisa lihat/kirim di channel mana) | Mau ubah akses channel, role baru, atau `/permission`/`/structure` |
 | `MEMBERSHIP_SYSTEM.md` | Alur `/subscribe`, anti-fraud bukti transfer, command admin, scheduler, skema tabel membership, cara nambah produk, keputusan strategi final | Mau ubah alur pembelian, tier, admin command membership |
 | `PRICING_SYSTEM_REFACTOR.md` | Harga tier VIP (Traveler/Companion/Patron + varian 6bln/1thn), cara ganti harga lewat preset, riwayat audit dead config | Mau ganti harga, nambah/ubah preset, atau cari tau kenapa suatu field harga dihapus |
@@ -68,3 +69,35 @@ masih ada).
 Sekarang file arsip di atas boleh dihapus fisik dari repo kalau sudah
 yakin dokumen penggantinya lengkap — jangan cuma diklaim dihapus di
 tempat lain (lihat alasan di atas).
+
+---
+
+## Gap Terbuka (ditemukan lewat audit 2026-09-19, belum dikerjakan)
+
+Fitur berikut **belum punya dokumen topik sama sekali** — cuma
+terdokumentasi sebagian lewat `COMMANDS.md` (daftar command-nya saja,
+bukan business logic) atau tersebar di komentar kode:
+
+- **Immersion** (`features/immersion/`) — 12 command, tidak ada
+  `IMMERSION_SYSTEM.md`.
+- **Social** (`features/social/`) — 5 command + 5 cog background/listener
+  (`auto_receive`, `voice_jtc`, `daily_question`, `event_roles`,
+  `rank_saver`), tidak ada `SOCIAL_SYSTEM.md`.
+- **Moderation** (`features/moderation/`) — 6 command + 1 cog background
+  (`quiz_forum_cog.py`), tidak ada `MODERATION_SYSTEM.md`.
+- **Server Admin** non-permission (`backup_database_cog.py`,
+  `backup_discord_cog.py`, `say_cog.py`) — bagian permission/structure
+  sudah tercakup `PERMISSION_MATRIX.md`, tapi fungsi backup & `/say`
+  belum.
+
+Juga ditemukan: **role sistem** (faction, achievement, leveling di
+`shared/server_map.yml`) belum punya dokumen konsolidasi — `PERMISSION_MATRIX.md`
+§1 secara eksplisit mengecualikannya karena tidak dipakai gating
+channel, dan **tidak ada folder `tests/`** di repo — bukan gap
+dokumentasi, tapi gap pengujian otomatis.
+
+Keputusan yang belum diambil: apakah tiap folder yang kosong butuh 1 MD
+sendiri, atau sebagian cukup digabung/masuk dokumen lain (mis. `system/`
+kemungkinan lebih cocok masuk `DEVELOPMENT_GUIDE.md`/`DEPLOYMENT.md`
+daripada `SYSTEM_SYSTEM.md` terpisah) — perlu dievaluasi per-fitur,
+bukan otomatis 1 folder = 1 file.

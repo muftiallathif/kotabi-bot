@@ -18,6 +18,16 @@ suatu perubahan wajib dicatat di sini vs cukup di dokumen topiknya saja.
 
 ## 2026
 
+- **19 Sep** — `COMMANDS.md` dibuat (belum pernah ada sebelumnya).
+  Grep seluruh `features/*/*_cog.py`, 44 slash command + 4 command
+  group (13 subcommand) + 5 prefix command diverifikasi satu-satu ke
+  `async def` aslinya. Ditemukan: 12 dari 32 cog murni listener/
+  background task tanpa command; banyak command admin ternyata gated
+  `in-body` (bukan lewat decorator `shared/checks.py`), berisiko
+  terlihat "terbuka" kalau cuma baca decorator. `DOCS_INDEX.md`
+  ditambah bagian "Gap Terbuka" — 4 fitur (`immersion`, `social`,
+  `moderation`, sebagian `server_admin`) belum punya dokumen topik,
+  dan tidak ada folder `tests/` di repo. Detail: `COMMANDS.md`.
 - **21 Jul** — Sistem harga tier VIP (Traveler/Companion/Patron)
   dirombak jadi single-source-of-truth lewat preset harga
   (`pricing_presets.yml`), termasuk varian 6 bulan/1 tahun otomatis.
