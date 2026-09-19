@@ -18,6 +18,27 @@ suatu perubahan wajib dicatat di sini vs cukup di dokumen topiknya saja.
 
 ## 2026
 
+- **19 Sep** — `SERVER_ADMIN_SYSTEM.md` dibuat (belum pernah ada
+  sebelumnya) — dokumen topik terakhir, semua 8 fitur (`dictionary`,
+  `gatekeeper`, `membership`, `immersion`, `social`, `moderation`,
+  `server_admin`, `system`) sekarang terdokumentasi. Dibaca penuh 3
+  file (628 baris) + `git log -p --follow`/`git show` tiap file khusus
+  mencari check yang pernah dihapus/dilemahkan. Ditemukan **regresi
+  keamanan nyata**: `/backup_database` dulu (commit `e95d7f0`) memakai
+  `@app_commands.checks.has_permissions(administrator=True)` (ditegakkan
+  backend), diganti jadi `@app_commands.default_permissions(...)` (cuma
+  saran sisi-client) tanpa backstop apa pun di commit `bb3b698` — satu-
+  satunya gate sekarang adalah Integration setting Discord yang bisa
+  diubah admin guild mana pun, untuk command yang mengekspor SELURUH
+  database mentah tanpa filter tabel. Ini temuan paling serius di
+  seluruh rangkaian audit (Immersion, Social, Moderation, Server Admin)
+  karena sifatnya regresi, bukan sekadar belum pernah diimplementasi.
+  Juga ditemukan permission laundering di parameter `channel` grup
+  `/say` (keempat subcommand). Dikonfirmasi aman:
+  `/backup_discord_server` (defense-in-depth benar, webhook secret
+  tidak terekspor) dan cek authorship bot di `/say edit`/`/say delete`.
+  `COMMANDS.md`/`DOCS_INDEX.md` diupdate. Documentation-only. Detail:
+  `SERVER_ADMIN_SYSTEM.md` §2, §8.
 - **19 Sep** — `MODERATION_SYSTEM.md` dibuat (belum pernah ada
   sebelumnya). Dibaca penuh 4 file `features/moderation/` + 2 config +
   `git log -p --follow` tiap file, plus cross-check eksplisit ke

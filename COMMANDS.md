@@ -184,10 +184,10 @@ Detail lengkap mekanisme + temuan keamanan: `SOCIAL_SYSTEM.md`.
 
 | Command | Parameter | Akses | Ringkasan | Lokasi |
 |---|---|---|---|---|
-| `/backup_database` | — | admin | Gzip database SQLite, kirim sebagai file privat | `backup_database_cog.py:43` |
+| `/backup_database` | — | **`default_permissions` SAJA — tidak ada in-body check, REGRESI dari `has_permissions()` yang dulu ditegakkan (commit `bb3b698`)** ⚠️⚠️ | Gzip database SQLite (SELURUH tabel, tanpa filter), kirim sebagai file privat | `backup_database_cog.py:43` |
 | `/backup_discord_server` | — | admin + `in-body: _is_authorized()` | Ekspor struktur server (channel, role, emoji, dst) ke JSON | `backup_discord_cog.py:172` |
 
-### Group `/say` — admin, `@is_staff()` di semua subcommand (`say_cog.py`)
+### Group `/say` — admin, `@is_staff()` di semua subcommand (`say_cog.py`) ⚠️ parameter `channel` tidak mengecek permission staff di channel target (permission laundering) — lihat `SERVER_ADMIN_SYSTEM.md` §4.4
 
 | Subcommand | Parameter | Lokasi |
 |---|---|---|
@@ -214,7 +214,8 @@ Detail lengkap mekanisme + temuan keamanan: `SOCIAL_SYSTEM.md`.
 | `setup` | — | `structure_cog.py:252` |
 
 Detail permission channel & struktur kategori: `PERMISSION_MATRIX.md`.
-Fungsi backup/say sendiri **belum** punya dokumen topik.
+Detail lengkap mekanisme backup/say + temuan keamanan:
+`SERVER_ADMIN_SYSTEM.md`.
 
 ---
 
@@ -261,6 +262,13 @@ seluruh repo).
 
 ## Riwayat Perubahan Signifikan
 
+- **2026-09-19** — Section Server Admin ditandai ⚠️⚠️ pada
+  `/backup_database` (regresi keamanan — permission check yang dulu
+  ditegakkan backend diganti jadi `default_permissions` tanpa backstop
+  di commit `bb3b698`, temuan paling serius di seluruh audit series)
+  dan ⚠️ pada `/say` (parameter `channel` memungkinkan permission
+  laundering). Link ditambahkan ke `SERVER_ADMIN_SYSTEM.md` yang baru
+  dibuat — dokumen topik terakhir, semua 8 fitur sekarang terdokumentasi.
 - **2026-09-19** — Section Moderation ditandai ⚠️ pada `/solved`
   (tidak ada pengecekan otorisasi sama sekali) dan `/selfmute` (bisa
   dibatalkan lewat interaksi dengan `rank_saver_cog.py`). Klarifikasi

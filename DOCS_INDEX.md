@@ -23,6 +23,7 @@ update dokumentasi.
 | `IMMERSION_SYSTEM.md` | Mekanisme `/log`, achievement, goal, statistik, bar chart race, cache autocomplete AniList/VNDB/TMDB | Mau ubah poin/achievement/goal, atau debug fitur immersion apa pun |
 | `SOCIAL_SYSTEM.md` | Mekanisme `/info`, `/kneelderboard`, `/bookmarks`, `/create_role`, auto-role, voice join-to-create, pertanyaan harian AI, role event, snapshot/restore role | Mau ubah fitur social apa pun, atau debug kenapa role balik sendiri setelah dicabut |
 | `MODERATION_SYSTEM.md` | Mekanisme `/solved`, `/selfmute`, `/unmute_user`, `/sticky_last_message`, auto-archive thread, interaksi dengan `rank_saver_cog.py` | Mau ubah fitur moderation apa pun, atau debug kenapa mute bisa batal sendiri |
+| `SERVER_ADMIN_SYSTEM.md` | Mekanisme `/backup_database`, `/backup_discord_server`, `/say` — rantai otorisasi lengkap tiap command | Mau ubah fitur backup/say, atau cek siapa sebenarnya bisa akses backup database |
 | `PERMISSION_MATRIX.md` | Permission channel & role lintas-fitur (siapa bisa lihat/kirim di channel mana) | Mau ubah akses channel, role baru, atau `/permission`/`/structure` |
 | `MEMBERSHIP_SYSTEM.md` | Alur `/subscribe`, anti-fraud bukti transfer, command admin, scheduler, skema tabel membership, cara nambah produk, keputusan strategi final | Mau ubah alur pembelian, tier, admin command membership |
 | `PRICING_SYSTEM_REFACTOR.md` | Harga tier VIP (Traveler/Companion/Patron + varian 6bln/1thn), cara ganti harga lewat preset, riwayat audit dead config | Mau ganti harga, nambah/ubah preset, atau cari tau kenapa suatu field harga dihapus |
@@ -77,11 +78,26 @@ tempat lain (lihat alasan di atas).
 
 ## Gap Terbuka (ditemukan lewat audit 2026-09-19, belum dikerjakan)
 
-**Update 19 Sep:** `IMMERSION_SYSTEM.md`, `SOCIAL_SYSTEM.md`, dan
-`MODERATION_SYSTEM.md` sudah dibuat (lihat tabel di atas) — dicoret
-dari daftar di bawah. Ketiga audit menemukan gap keamanan/dokumentasi
-nyata yang **belum diperbaiki** (sengaja, lihat prinsip
-audit→document→classify→decide→fix→test):
+**Update 19 Sep:** `IMMERSION_SYSTEM.md`, `SOCIAL_SYSTEM.md`,
+`MODERATION_SYSTEM.md`, dan `SERVER_ADMIN_SYSTEM.md` sudah dibuat
+(lihat tabel di atas) — semua fitur (`dictionary`, `gatekeeper`,
+`membership`, `immersion`, `social`, `moderation`, `server_admin`,
+`system`) sekarang punya dokumen topik. Keempat audit menemukan gap
+keamanan/dokumentasi nyata yang **belum diperbaiki** (sengaja, lihat
+prinsip audit→document→classify→decide→fix→test):
+
+- ⚠️⚠️ **`/backup_database` mengalami REGRESI keamanan** — commit
+  `bb3b698` mengganti pengecekan permission yang tadinya ditegakkan
+  backend (`has_permissions(administrator=True)`) jadi cuma saran
+  sisi-client (`default_permissions`) tanpa backstop apa pun. Sekarang
+  siapa pun bisa mengekspor SELURUH database (termasuk bukti
+  pembayaran, riwayat membership, aktivitas semua user) kalau admin
+  guild kebetulan melonggarkan Integration setting. **Temuan paling
+  serius di seluruh rangkaian audit ini.** —
+  `SERVER_ADMIN_SYSTEM.md` §2, §8.
+- `/say` (server_admin) — parameter `channel` di keempat subcommand
+  memungkinkan permission laundering: permission staff pemanggil di
+  channel target tidak pernah dicek — `SERVER_ADMIN_SYSTEM.md` §4.4, §8.
 
 - 3 command immersion (`log_export`, `logs`, `log_stats`) mengklaim
   "Khusus Staf" di UI tapi tidak ditegakkan di kode —
@@ -102,23 +118,21 @@ audit→document→classify→decide→fix→test):
   karena dampaknya berbeda (membatalkan sanksi, bukan memulihkan
   privilege) — `MODERATION_SYSTEM.md` §4, §10.
 
-Fitur berikut **masih belum punya dokumen topik sama sekali** — cuma
-terdokumentasi sebagian lewat `COMMANDS.md` (daftar command-nya saja,
-bukan business logic) atau tersebar di komentar kode:
+**Sisa gap non-dokumentasi (bukan "fitur belum diaudit", tapi utang
+teknis lain yang sudah ketahuan sepanjang audit):**
 
-- **Server Admin** non-permission (`backup_database_cog.py`,
-  `backup_discord_cog.py`, `say_cog.py`) — bagian permission/structure
-  sudah tercakup `PERMISSION_MATRIX.md`, tapi fungsi backup & `/say`
-  belum.
+- **`system/`** (`sync_cog.py`, `watchdog_cog.py`) — belum diputuskan
+  perlu `SYSTEM_SYSTEM.md` sendiri atau cukup masuk
+  `DEVELOPMENT_GUIDE.md`/`DEPLOYMENT.md` (folder ini kecil, prefix
+  command saja, bukan slash command — lihat `COMMANDS.md` §8).
+- **Role sistem** (faction, achievement, leveling di
+  `shared/server_map.yml`) belum punya dokumen konsolidasi —
+  `PERMISSION_MATRIX.md` §1 secara eksplisit mengecualikannya karena
+  tidak dipakai gating channel.
+- **Tidak ada folder `tests/`** di repo — bukan gap dokumentasi, tapi
+  gap pengujian otomatis (engineering gap, fase terpisah setelah
+  seluruh audit dokumentasi selesai).
 
-Juga ditemukan: **role sistem** (faction, achievement, leveling di
-`shared/server_map.yml`) belum punya dokumen konsolidasi — `PERMISSION_MATRIX.md`
-§1 secara eksplisit mengecualikannya karena tidak dipakai gating
-channel, dan **tidak ada folder `tests/`** di repo — bukan gap
-dokumentasi, tapi gap pengujian otomatis.
-
-Keputusan yang belum diambil: apakah tiap folder yang kosong butuh 1 MD
-sendiri, atau sebagian cukup digabung/masuk dokumen lain (mis. `system/`
-kemungkinan lebih cocok masuk `DEVELOPMENT_GUIDE.md`/`DEPLOYMENT.md`
-daripada `SYSTEM_SYSTEM.md` terpisah) — perlu dievaluasi per-fitur,
-bukan otomatis 1 folder = 1 file.
+Keputusan yang belum diambil: apakah `system/` butuh 1 MD sendiri, atau
+cukup digabung ke dokumen lain — perlu dievaluasi, bukan otomatis
+1 folder = 1 file.
