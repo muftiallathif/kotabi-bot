@@ -162,7 +162,7 @@ thread latihan `quiz-public` yang tidak aktif (default tiap 1 jam, lihat
 | Command | Parameter | Akses | Ringkasan | Lokasi |
 |---|---|---|---|---|
 | `/info` | `info_key` | terbuka | Arsip informasi server (topik/keyword, ada autocomplete) | `info_cog.py:86` |
-| `/kneelderboard` | `guild_id?` | terbuka | Leaderboard skor "kneel" (reaksi 🧎) | `kneel_leaderboard_cog.py:149` |
+| `/kneelderboard` | `guild_id?` | terbuka — `guild_id` bisa query server Discord LAIN tanpa cek keanggotaan, hasil non-ephemeral ⚠️ | Leaderboard skor "kneel" (reaksi 🧎) | `kneel_leaderboard_cog.py:149` |
 | `/bookmarks` | — | terbuka | Lihat 10 pesan bookmark terbaru | `bookmark_cog.py:151` |
 | `/create_role` | `name`, `color_hex` | `in-body: has_premium_role()` (Companion/Patron) | Buat/update role kustom warna sendiri | `custom_role_cog.py:58` |
 | `/delete_role` | — | terbuka (hapus milik sendiri saja) | Hapus role kustom sendiri | `custom_role_cog.py:106` |
@@ -175,10 +175,9 @@ thread latihan `quiz-public` yang tidak aktif (default tiap 1 jam, lihat
 | `voice_jtc_cog.py` | Voice "Join to Create" — bikin room privat otomatis |
 | `daily_question_cog.py` | Generate pertanyaan harian via OpenAI (background task tiap menit) |
 | `event_roles_cog.py` | Role sementara mengikuti Discord Scheduled Event |
-| `rank_saver_cog.py` | Snapshot role tiap 10 menit, pulihkan otomatis saat user rejoin |
+| `rank_saver_cog.py` | Snapshot role tiap 10 menit, pulihkan otomatis saat user rejoin ⚠️ role staff bisa ikut ter-restore setelah sengaja dicabut (window kick/rejoin ≤10 menit) |
 
-**Belum ada dokumen topik untuk fitur ini** — termasuk yang `OPENAI_KEY`-nya
-sudah dicatat sebagai gap env var di `DEPLOYMENT.md` §1.
+Detail lengkap mekanisme + temuan keamanan: `SOCIAL_SYSTEM.md`.
 
 ---
 
@@ -263,6 +262,10 @@ seluruh repo).
 
 ## Riwayat Perubahan Signifikan
 
+- **2026-09-19** — Section Social ditandai ⚠️ pada `/kneelderboard`
+  (cross-guild query tanpa cek keanggotaan) dan `rank_saver_cog.py`
+  (role staff bisa auto-restore setelah dicabut). Link ditambahkan ke
+  `SOCIAL_SYSTEM.md` yang baru dibuat.
 - **2026-09-19** — Section Immersion ditandai ⚠️ pada `/log_export`,
   `/logs`, `/log_stats` — deskripsi UI ketiganya mengklaim "Khusus Staf"
   untuk parameter `user`, tapi audit `IMMERSION_SYSTEM.md` menemukan

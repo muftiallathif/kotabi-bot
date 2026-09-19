@@ -21,6 +21,7 @@ update dokumentasi.
 | `DEVELOPMENT_GUIDE.md` | Konvensi struktur folder/kode, aturan penamaan, checklist push, checklist ubah config yang berdampak user aktif, **protokol update dokumentasi** | Mau nambah/edit fitur apa pun; bingung dokumen mana yang relevan |
 | `COMMANDS.md` | Daftar lengkap semua slash command & prefix command lintas-fitur — parameter, level akses (decorator + in-body check), lokasi file, plus cog yang tidak punya command sama sekali | Mau tau command apa saja yang ada, siapa yang boleh pakai, atau cari lokasi kode command tertentu |
 | `IMMERSION_SYSTEM.md` | Mekanisme `/log`, achievement, goal, statistik, bar chart race, cache autocomplete AniList/VNDB/TMDB | Mau ubah poin/achievement/goal, atau debug fitur immersion apa pun |
+| `SOCIAL_SYSTEM.md` | Mekanisme `/info`, `/kneelderboard`, `/bookmarks`, `/create_role`, auto-role, voice join-to-create, pertanyaan harian AI, role event, snapshot/restore role | Mau ubah fitur social apa pun, atau debug kenapa role balik sendiri setelah dicabut |
 | `PERMISSION_MATRIX.md` | Permission channel & role lintas-fitur (siapa bisa lihat/kirim di channel mana) | Mau ubah akses channel, role baru, atau `/permission`/`/structure` |
 | `MEMBERSHIP_SYSTEM.md` | Alur `/subscribe`, anti-fraud bukti transfer, command admin, scheduler, skema tabel membership, cara nambah produk, keputusan strategi final | Mau ubah alur pembelian, tier, admin command membership |
 | `PRICING_SYSTEM_REFACTOR.md` | Harga tier VIP (Traveler/Companion/Patron + varian 6bln/1thn), cara ganti harga lewat preset, riwayat audit dead config | Mau ganti harga, nambah/ubah preset, atau cari tau kenapa suatu field harga dihapus |
@@ -75,19 +76,24 @@ tempat lain (lihat alasan di atas).
 
 ## Gap Terbuka (ditemukan lewat audit 2026-09-19, belum dikerjakan)
 
-**Update 19 Sep:** `IMMERSION_SYSTEM.md` sudah dibuat (lihat tabel di
-atas) — dicoret dari daftar di bawah. Audit itu juga menemukan gap
-keamanan/dokumentasi nyata: 3 command (`log_export`, `logs`, `log_stats`)
-mengklaim "Khusus Staf" di UI tapi tidak ditegakkan di kode — **belum
-diperbaiki**, tercatat di `IMMERSION_SYSTEM.md` §14.
+**Update 19 Sep:** `IMMERSION_SYSTEM.md` dan `SOCIAL_SYSTEM.md` sudah
+dibuat (lihat tabel di atas) — dicoret dari daftar di bawah. Kedua audit
+menemukan gap keamanan/dokumentasi nyata yang **belum diperbaiki**
+(sengaja, lihat prinsip audit→document→classify→decide→fix→test):
+
+- 3 command immersion (`log_export`, `logs`, `log_stats`) mengklaim
+  "Khusus Staf" di UI tapi tidak ditegakkan di kode —
+  `IMMERSION_SYSTEM.md` §14.
+- `rank_saver_cog.py` (social) bisa mengembalikan role — termasuk role
+  staff — secara otomatis setelah sengaja dicabut, lewat window
+  staleness kick/rejoin ≤10 menit — `SOCIAL_SYSTEM.md` §10, §14.
+- `/kneelderboard` (social) membolehkan query leaderboard server
+  Discord lain tanpa cek keanggotaan — `SOCIAL_SYSTEM.md` §3, §14.
 
 Fitur berikut **masih belum punya dokumen topik sama sekali** — cuma
 terdokumentasi sebagian lewat `COMMANDS.md` (daftar command-nya saja,
 bukan business logic) atau tersebar di komentar kode:
 
-- **Social** (`features/social/`) — 5 command + 5 cog background/listener
-  (`auto_receive`, `voice_jtc`, `daily_question`, `event_roles`,
-  `rank_saver`), tidak ada `SOCIAL_SYSTEM.md`.
 - **Moderation** (`features/moderation/`) — 6 command + 1 cog background
   (`quiz_forum_cog.py`), tidak ada `MODERATION_SYSTEM.md`.
 - **Server Admin** non-permission (`backup_database_cog.py`,
