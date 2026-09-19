@@ -86,8 +86,8 @@ Detail alur kuis, anti-cheat, cooldown, journey system: `GATEKEEPER_QUIZ_SYSTEM.
 | `/log` | `media_type`, `amount`, `name?`, `comment?`, `backfill_date?` | `@is_vip()` | Catat aktivitas immersion, dapat poin | `log_cog.py:167` |
 | `/log_undo` | `log_entry` | `@is_vip()` | Batalkan satu entri log | `log_cog.py:364` |
 | `/log_achievements` | — | `@is_vip()` | Lihat lencana pencapaian | `log_cog.py:405` |
-| `/log_export` | `user?` | `@is_vip()` — deskripsi UI bilang "Khusus Staf", **TIDAK ditegakkan di kode** ⚠️ | Ekspor riwayat log sebagai CSV | `log_cog.py:442` |
-| `/logs` | `user?` | `@is_vip()` — deskripsi UI bilang "Khusus Staf", **TIDAK ditegakkan di kode** ⚠️ | Ekspor riwayat log sebagai dokumen `.txt` | `log_cog.py:478` |
+| `/log_export` | `user?` | `@is_vip()` — deskripsi UI bilang "Khusus Staf", **TIDAK ditegakkan di kode**; hasil (file CSV) **non-ephemeral** ⚠️⚠️ | Ekspor riwayat log sebagai CSV | `log_cog.py:442` |
+| `/logs` | `user?` | `@is_vip()` — deskripsi UI bilang "Khusus Staf", **TIDAK ditegakkan di kode**; hasil (file TXT) **non-ephemeral** ⚠️⚠️ | Ekspor riwayat log sebagai dokumen `.txt` | `log_cog.py:478` |
 | `/log_leaderboard` | `media_type?`, `month?` | `@is_vip()` | Leaderboard keaktifan bulan ini (atau bulan/tipe media pilihan) | `log_cog.py:511` |
 | `/log_race` | `from_date`, `to_date`, `media_type?`, `race_type?='points'` | terbuka (cooldown 300 detik, admin exempt) | Video bar chart race progress immersion | `bar_races_cog.py:127` |
 | `/log_stats` | `user?`, `from_date?`, `to_date?`, `immersion_type?` | **terbuka — deskripsi UI parameter `user` bilang "Khusus Staf", TIDAK ADA gate sama sekali di kode, DAN hasil dikirim non-ephemeral (publik di channel)** ⚠️⚠️ | Grafik bar chart + heatmap statistik immersion (menampilkan nama & data personal target user) | `stats_cog.py:229` |

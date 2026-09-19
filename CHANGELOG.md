@@ -18,6 +18,15 @@ suatu perubahan wajib dicatat di sini vs cukup di dokumen topiknya saja.
 
 ## 2026
 
+- **19 Sep** — `IMMERSION_SYSTEM.md`/`COMMANDS.md` dikoreksi: saat
+  menyiapkan test untuk finding #2 (`/log_export`/`/logs`/`/log_stats`),
+  ditemukan bahwa `/log_export` dan `/logs` **juga non-ephemeral** di
+  jalur sukses (`log_cog.py:472,508` — tidak ada `ephemeral=True`),
+  bukan cuma `/log_stats` seperti yang tertulis sebelumnya.
+  `IMMERSION_SYSTEM.md` §14 sebelumnya menyiratkan "`/log_stats` lebih
+  berisiko karena hasilnya otomatis dipublikasikan" — klaim itu keliru,
+  ketiganya sama-sama publik. Diperbaiki, `COMMANDS.md` ditandai ⚠️⚠️.
+  Tidak ada kode produksi yang diubah.
 - **19 Sep** — `tests/` dibuat (belum pernah ada sebelumnya) — mulai
   fase Testing setelah audit dokumentasi 8 fitur selesai. Sebelum
   menulis test apa pun: eksperimen empiris terisolasi (discord.py 2.7.1,

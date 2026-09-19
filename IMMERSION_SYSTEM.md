@@ -424,11 +424,21 @@ tidak memanggil `is_valid_channel()` sama sekali.**
 **1. Tiga command mengklaim "Khusus Staf" di parameter `user`, tapi
 TIDAK ADA satu pun yang benar-benar mengecek role staff:**
 
-| Command | Klaim di deskripsi Discord | Gate sesungguhnya di kode |
-|---|---|---|
-| `/log_export` | "Khusus Staf" | `@is_vip()` saja — **VIP mana pun** (bukan cuma staff) bisa ekspor riwayat log user lain |
-| `/logs` | "Khusus Staf" | `@is_vip()` saja — sama seperti di atas |
-| `/log_stats` | "(Opsional/Khusus Staf)" | **Tidak ada gate apa pun** — siapa saja (bahkan tanpa VIP) bisa lihat statistik user lain |
+| Command | Klaim di deskripsi Discord | Gate sesungguhnya di kode | Output jalur sukses |
+|---|---|---|---|
+| `/log_export` | "Khusus Staf" | `@is_vip()` saja — **VIP mana pun** (bukan cuma staff) bisa ekspor riwayat log user lain | **Non-ephemeral** — `interaction.response.send_message(..., file=...)` tanpa `ephemeral=True` (`log_cog.py:472`) |
+| `/logs` | "Khusus Staf" | `@is_vip()` saja — sama seperti di atas | **Non-ephemeral** — `interaction.followup.send(..., file=...)` tanpa `ephemeral=True` (`log_cog.py:508`) |
+| `/log_stats` | "(Opsional/Khusus Staf)" | **Tidak ada gate apa pun** — siapa saja (bahkan tanpa VIP) bisa lihat statistik user lain | Non-ephemeral (sama) |
+
+**Koreksi dokumentasi (ditemukan 19 Sep, saat menyiapkan test):** hanya
+pesan error (`LOG_NO_HISTORY`, tidak ada data) yang ephemeral di
+`/log_export`/`/logs` — **jalur sukses (file CSV/TXT beneran terkirim)
+sama sekali TIDAK ephemeral**, persis seperti `/log_stats`. Ini
+memperbaiki klaim di bagian 14 yang sebelumnya menyiratkan cuma
+`/log_stats` yang "otomatis dipublikasikan ke channel" — ketiganya
+ternyata sama-sama begitu. Yang tetap membedakan `/log_stats`: dia
+satu-satunya yang **tidak punya gate akses sama sekali** (bukan cuma
+gate yang salah populasi seperti `/log_export`/`/logs`).
 
 Tidak ada satu pun dari ketiganya yang memanggil `has_staff_role()`/
 `is_staff()` dari `shared/checks.py`. Ini bukan salah tulis dokumentasi
@@ -463,9 +473,12 @@ sejak commit pertama tanpa implementasi yang pernah menyertainya)
 membuat ini **jauh lebih mungkin oversight implementasi (bug
 permission) daripada keputusan desain publik yang disengaja** — kalau
 memang sengaja publik, tidak ada alasan menulis "Khusus Staf" sejak
-awal. `/log_stats` dinilai **sama seriusnya dengan `/log_export`/`/logs`,
-bahkan lebih berisiko** karena hasilnya otomatis dipublikasikan ke
-channel, bukan sekadar bisa "dibaca" oleh pemanggil.
+awal. **Koreksi 19 Sep:** ketiga command (`/log_export`, `/logs`,
+`/log_stats`) sama-sama mempublikasikan hasilnya non-ephemeral ke
+channel di jalur sukses — bukan cuma `/log_stats`. `/log_stats` tetap
+yang paling terbuka dari sisi *siapa boleh memicu* (tidak ada gate
+sama sekali, vs `@is_vip()` di dua lainnya), tapi eksposur *hasilnya*
+sama-sama publik di ketiganya.
 
 Perlu diputuskan (belum diputuskan di audit ini): perbaiki kode supaya
 sesuai klaim (tambah `@is_staff()`/`in-body` check + pertimbangkan
